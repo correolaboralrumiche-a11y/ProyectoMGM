@@ -1,0 +1,11 @@
+node_modules/
+dist/
+build/
+.vite/
+.env
+.env.*
+*.log
+server/database/app.db
+server/data/app.db
+.DS_Store
+Thumbs.db
