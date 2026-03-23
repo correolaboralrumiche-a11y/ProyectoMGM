@@ -1,9 +1,13 @@
 import express from 'express';
 import cors from 'cors';
+
 import './config/db.js';
+
 import projectsRoutes from './modules/projects/projects.routes.js';
 import wbsRoutes from './modules/wbs/wbs.routes.js';
 import activitiesRoutes from './modules/activities/activities.routes.js';
+import baselinesRoutes from './modules/baselines/baselines.routes.js';
+
 import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -18,6 +22,7 @@ app.get('/health', (req, res) => {
 app.use('/projects', projectsRoutes);
 app.use('/wbs', wbsRoutes);
 app.use('/activities', activitiesRoutes);
+app.use('/baselines', baselinesRoutes);
 
 app.use(errorHandler);
 

@@ -19,7 +19,6 @@ function tableExists(tableName) {
   const row = db
     .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
     .get(tableName);
-
   return !!row;
 }
 
@@ -33,7 +32,6 @@ function indexExists(indexName) {
   const row = db
     .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?")
     .get(indexName);
-
   return !!row;
 }
 
@@ -72,9 +70,7 @@ function rebuildActivitiesTable() {
 
   const rows = db
     .prepare(`
-      SELECT
-        a.*,
-        w.project_id AS resolved_project_id
+      SELECT a.*, w.project_id AS resolved_project_id
       FROM activities a
       INNER JOIN wbs w ON w.id = a.wbs_id
       ORDER BY datetime(a.created_at) ASC, a.id ASC
@@ -94,7 +90,6 @@ function rebuildActivitiesTable() {
     if (startDate && endDate) {
       const start = new Date(`${startDate}T00:00:00`);
       const end = new Date(`${endDate}T00:00:00`);
-
       if (
         !Number.isNaN(start.getTime()) &&
         !Number.isNaN(end.getTime()) &&
@@ -104,16 +99,15 @@ function rebuildActivitiesTable() {
       }
     }
 
-    const duration =
-      startDate && endDate
-        ? Math.max(
-            0,
-            Math.round(
-              (new Date(`${endDate}T00:00:00`) - new Date(`${startDate}T00:00:00`)) /
-                (1000 * 60 * 60 * 24)
-            )
+    const duration = startDate && endDate
+      ? Math.max(
+          0,
+          Math.round(
+            (new Date(`${endDate}T00:00:00`) - new Date(`${startDate}T00:00:00`)) /
+              (1000 * 60 * 60 * 24)
           )
-        : Math.max(0, Number(row.duration || 0));
+        )
+      : Math.max(0, Number(row.duration || 0));
 
     return {
       id: row.id,
@@ -137,6 +131,7 @@ function rebuildActivitiesTable() {
   const tx = db.transaction(() => {
     db.exec(`
       DROP TRIGGER IF EXISTS trg_activities_updated_at;
+
       CREATE TABLE activities_new (
         id TEXT PRIMARY KEY,
         project_id TEXT NOT NULL,
@@ -165,37 +160,14 @@ function rebuildActivitiesTable() {
 
     const insertStmt = db.prepare(`
       INSERT INTO activities_new (
-        id,
-        project_id,
-        wbs_id,
-        activity_id,
-        name,
-        start_date,
-        end_date,
-        duration,
-        progress,
-        hours,
-        cost,
-        status,
-        sort_order,
-        created_at,
-        updated_at
-      ) VALUES (
-        @id,
-        @project_id,
-        @wbs_id,
-        @activity_id,
-        @name,
-        @start_date,
-        @end_date,
-        @duration,
-        @progress,
-        @hours,
-        @cost,
-        @status,
-        @sort_order,
-        @created_at,
-        @updated_at
+        id, project_id, wbs_id, activity_id, name,
+        start_date, end_date, duration, progress,
+        hours, cost, status, sort_order, created_at, updated_at
+      )
+      VALUES (
+        @id, @project_id, @wbs_id, @activity_id, @name,
+        @start_date, @end_date, @duration, @progress,
+        @hours, @cost, @status, @sort_order, @created_at, @updated_at
       )
     `);
 
@@ -216,9 +188,7 @@ function rebuildActivitiesTable() {
       AFTER UPDATE ON activities
       FOR EACH ROW
       BEGIN
-        UPDATE activities
-        SET updated_at = datetime('now')
-        WHERE id = OLD.id;
+        UPDATE activities SET updated_at = datetime('now') WHERE id = OLD.id;
       END;
     `);
   });
@@ -236,7 +206,97 @@ function ensureActivitiesSchema() {
   }
 }
 
+function ensureBaselineSchema() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_baselines (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      project_name_snapshot TEXT NOT NULL,
+      project_description_snapshot TEXT DEFAULT '',
+      source_project_created_at TEXT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      baseline_type TEXT NOT NULL DEFAULT 'MANUAL',
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_project_baselines_project_name
+      ON project_baselines(project_id, name);
+    CREATE INDEX IF NOT EXISTS idx_project_baselines_project_id
+      ON project_baselines(project_id);
+    CREATE INDEX IF NOT EXISTS idx_project_baselines_created_at
+      ON project_baselines(created_at);
+
+    CREATE TABLE IF NOT EXISTS baseline_wbs (
+      id TEXT PRIMARY KEY,
+      baseline_id TEXT NOT NULL,
+      source_wbs_id TEXT NULL,
+      parent_id TEXT NULL,
+      name TEXT NOT NULL,
+      code TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (baseline_id) REFERENCES project_baselines(id) ON DELETE CASCADE,
+      FOREIGN KEY (parent_id) REFERENCES baseline_wbs(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_baseline_wbs_baseline_id
+      ON baseline_wbs(baseline_id);
+    CREATE INDEX IF NOT EXISTS idx_baseline_wbs_parent_id
+      ON baseline_wbs(parent_id);
+    CREATE INDEX IF NOT EXISTS idx_baseline_wbs_baseline_parent_sort
+      ON baseline_wbs(baseline_id, parent_id, sort_order);
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_baseline_wbs_baseline_code
+      ON baseline_wbs(baseline_id, code);
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_baseline_wbs_baseline_source
+      ON baseline_wbs(baseline_id, source_wbs_id);
+
+    CREATE TABLE IF NOT EXISTS baseline_activities (
+      id TEXT PRIMARY KEY,
+      baseline_id TEXT NOT NULL,
+      baseline_wbs_id TEXT NOT NULL,
+      source_activity_id TEXT NULL,
+      project_id TEXT NOT NULL,
+      activity_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      start_date TEXT NULL,
+      end_date TEXT NULL,
+      duration INTEGER NOT NULL DEFAULT 0 CHECK (duration >= 0),
+      progress REAL NOT NULL DEFAULT 0 CHECK (progress >= 0 AND progress <= 100),
+      hours REAL NOT NULL DEFAULT 0 CHECK (hours >= 0),
+      cost REAL NOT NULL DEFAULT 0 CHECK (cost >= 0),
+      status TEXT NOT NULL DEFAULT 'Not Started',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      source_created_at TEXT NULL,
+      source_updated_at TEXT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (baseline_id) REFERENCES project_baselines(id) ON DELETE CASCADE,
+      FOREIGN KEY (baseline_wbs_id) REFERENCES baseline_wbs(id) ON DELETE CASCADE,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      CHECK (
+        start_date IS NULL
+        OR end_date IS NULL
+        OR julianday(end_date) >= julianday(start_date)
+      )
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_baseline_activities_baseline_id
+      ON baseline_activities(baseline_id);
+    CREATE INDEX IF NOT EXISTS idx_baseline_activities_baseline_wbs_id
+      ON baseline_activities(baseline_wbs_id);
+    CREATE INDEX IF NOT EXISTS idx_baseline_activities_project_id
+      ON baseline_activities(project_id);
+    CREATE INDEX IF NOT EXISTS idx_baseline_activities_activity_id
+      ON baseline_activities(activity_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_baseline_activities_baseline_activity_id
+      ON baseline_activities(baseline_id, activity_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_baseline_activities_baseline_source
+      ON baseline_activities(baseline_id, source_activity_id);
+  `);
+}
+
 initializeSchemaIfNeeded();
 ensureActivitiesSchema();
+ensureBaselineSchema();
 
 export default db;

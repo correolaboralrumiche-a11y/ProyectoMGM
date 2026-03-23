@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import SectionCard from '../components/common/SectionCard.jsx';
 import DataTable from '../components/activities/DataTable.jsx';
 import { activitiesApi } from '../services/activitiesApi.js';
+import { api } from '../services/api.js';
 
 function getEarliestDate(values) {
   const filtered = values.filter(Boolean).sort();
@@ -25,7 +26,23 @@ function computeDuration(startDate, endDate) {
   return diff >= 0 ? diff : 0;
 }
 
-function buildWbsRows(tree, activities) {
+function buildBaselineMap(baselineActivities) {
+  const map = new Map();
+
+  (baselineActivities || []).forEach((item) => {
+    if (item.original_activity_id) {
+      map.set(`original:${item.original_activity_id}`, item);
+    }
+
+    if (item.activity_id) {
+      map.set(`activity:${item.activity_id}`, item);
+    }
+  });
+
+  return map;
+}
+
+function buildWbsRows(tree, activities, baselineMap) {
   const activitiesByWbs = new Map();
 
   activities.forEach((activity) => {
@@ -35,8 +52,20 @@ function buildWbsRows(tree, activities) {
   });
 
   function visit(node, level = 0) {
-    const directActivities = activitiesByWbs.get(node.id) || [];
+    const directActivities = (activitiesByWbs.get(node.id) || []).map((activity) => {
+      const baseline =
+        baselineMap.get(`original:${activity.id}`) ||
+        baselineMap.get(`activity:${activity.activity_id}`) ||
+        null;
+
+      return {
+        ...activity,
+        baseline,
+      };
+    });
+
     const childResults = (node.children || []).map((child) => visit(child, level + 1));
+
     const descendantActivities = [
       ...directActivities,
       ...childResults.flatMap((result) => result.descendantActivities),
@@ -46,30 +75,43 @@ function buildWbsRows(tree, activities) {
       (sum, activity) => sum + Number(activity.hours || 0),
       0
     );
+
     const totalCost = descendantActivities.reduce(
       (sum, activity) => sum + Number(activity.cost || 0),
       0
     );
-    const earliestStart = getEarliestDate(descendantActivities.map((activity) => activity.start_date));
-    const latestEnd = getLatestDate(descendantActivities.map((activity) => activity.end_date));
+
+    const earliestStart = getEarliestDate(
+      descendantActivities.map((activity) => activity.start_date)
+    );
+
+    const latestEnd = getLatestDate(
+      descendantActivities.map((activity) => activity.end_date)
+    );
 
     let weightedProgress = 0;
+
     if (descendantActivities.length > 0) {
       if (totalHours > 0) {
-        weightedProgress = descendantActivities.reduce(
-          (sum, activity) => sum + Number(activity.progress || 0) * Number(activity.hours || 0),
-          0
-        ) / totalHours;
+        weightedProgress =
+          descendantActivities.reduce(
+            (sum, activity) =>
+              sum + Number(activity.progress || 0) * Number(activity.hours || 0),
+            0
+          ) / totalHours;
       } else if (totalCost > 0) {
-        weightedProgress = descendantActivities.reduce(
-          (sum, activity) => sum + Number(activity.progress || 0) * Number(activity.cost || 0),
-          0
-        ) / totalCost;
+        weightedProgress =
+          descendantActivities.reduce(
+            (sum, activity) =>
+              sum + Number(activity.progress || 0) * Number(activity.cost || 0),
+            0
+          ) / totalCost;
       } else {
-        weightedProgress = descendantActivities.reduce(
-          (sum, activity) => sum + Number(activity.progress || 0),
-          0
-        ) / descendantActivities.length;
+        weightedProgress =
+          descendantActivities.reduce(
+            (sum, activity) => sum + Number(activity.progress || 0),
+            0
+          ) / descendantActivities.length;
       }
     }
 
@@ -113,8 +155,78 @@ export default function ActivitiesPage({
   reloadActivities,
 }) {
   const [requestedCellId, setRequestedCellId] = useState(null);
+  const [baselineMeta, setBaselineMeta] = useState(null);
+  const [baselineActivities, setBaselineActivities] = useState([]);
+  const [baselineLoading, setBaselineLoading] = useState(false);
+  const [baselineError, setBaselineError] = useState('');
 
-  const rows = useMemo(() => buildWbsRows(tree, activities), [activities, tree]);
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLatestBaseline() {
+      if (!activeProject?.id) {
+        setBaselineMeta(null);
+        setBaselineActivities([]);
+        setBaselineError('');
+        return;
+      }
+
+      setBaselineLoading(true);
+      setBaselineError('');
+
+      try {
+        const list = await api.get(`/baselines?projectId=${activeProject.id}`);
+        const baselines = Array.isArray(list) ? list : [];
+
+        if (!baselines.length) {
+          if (!cancelled) {
+            setBaselineMeta(null);
+            setBaselineActivities([]);
+          }
+          return;
+        }
+
+        const latest = [...baselines].sort((a, b) => {
+          const aTime = new Date(a.created_at || 0).getTime();
+          const bTime = new Date(b.created_at || 0).getTime();
+          return bTime - aTime;
+        })[0];
+
+        const detail = await api.get(`/baselines/${latest.id}`);
+
+        if (!cancelled) {
+          setBaselineMeta(latest);
+          setBaselineActivities(Array.isArray(detail?.activities) ? detail.activities : []);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setBaselineMeta(null);
+          setBaselineActivities([]);
+          setBaselineError(error.message || 'No se pudo cargar la línea base');
+        }
+      } finally {
+        if (!cancelled) {
+          setBaselineLoading(false);
+        }
+      }
+    }
+
+    loadLatestBaseline();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProject?.id]);
+
+  const baselineMap = useMemo(
+    () => buildBaselineMap(baselineActivities),
+    [baselineActivities]
+  );
+
+  const rows = useMemo(
+    () => buildWbsRows(tree, activities, baselineMap),
+    [activities, baselineMap, tree]
+  );
 
   const handleRequestedCellHandled = useCallback(() => {
     setRequestedCellId(null);
@@ -122,8 +234,13 @@ export default function ActivitiesPage({
 
   if (!activeProject) {
     return (
-      <SectionCard title="Actividades" subtitle="Selecciona primero un proyecto">
-        <div className="text-sm text-slate-500">No hay proyecto activo.</div>
+      <SectionCard
+        title="Actividades"
+        subtitle="Selecciona un proyecto para visualizar y editar actividades"
+      >
+        <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+          No hay proyecto activo.
+        </div>
       </SectionCard>
     );
   }
@@ -169,18 +286,38 @@ export default function ActivitiesPage({
 
   return (
     <SectionCard
-      title={`Actividades - ${activeProject.name}`}
-      subtitle="Activity ID y Nombre fijos, selección por un click y edición por doble click"
+      title="Actividades"
+      subtitle="Gestiona la hoja de actividades del proyecto activo"
     >
-      <DataTable
-        rows={rows}
-        onAddActivity={handleAddActivity}
-        onUpdateActivity={handleUpdateActivity}
-        onDeleteActivity={handleDeleteActivity}
-        requestedCellId={requestedCellId}
-        onRequestedCellHandled={handleRequestedCellHandled}
-        columnSettingsKey={`mgm.activities.columns.${activeProject.id}`}
-      />
+      <div className="space-y-3">
+        {baselineMeta ? (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+            Línea Base visible: <span className="font-semibold">{baselineMeta.name}</span>
+          </div>
+        ) : baselineLoading ? (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            Cargando línea base...
+          </div>
+        ) : baselineError ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            {baselineError}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            Este proyecto no tiene línea base registrada.
+          </div>
+        )}
+
+        <DataTable
+          rows={rows}
+          onAddActivity={handleAddActivity}
+          onUpdateActivity={handleUpdateActivity}
+          onDeleteActivity={handleDeleteActivity}
+          requestedCellId={requestedCellId}
+          onRequestedCellHandled={handleRequestedCellHandled}
+          columnSettingsKey={activeProject ? `activities.columns.${activeProject.id}` : 'activities.columns'}
+        />
+      </div>
     </SectionCard>
   );
 }
