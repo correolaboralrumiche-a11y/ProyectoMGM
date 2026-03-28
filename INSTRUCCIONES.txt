@@ -1,0 +1,1 @@
+Reemplaza los archivos y ejecuta npx.cmd knex migrate:latest --env development en server. Reinicia backend y frontend.

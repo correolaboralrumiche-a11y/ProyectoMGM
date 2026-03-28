@@ -1,119 +1,230 @@
-import db from '../../config/db.js';
+import { pool, withTransaction } from '../../config/db.js';
 
-function getParentPredicate(parentId) {
-  return parentId === null || parentId === undefined
-    ? {
-        clause: 'parent_id IS NULL',
-        params: [],
-      }
-    : {
-        clause: 'parent_id = ?',
-        params: [parentId],
-      };
+function mapWbsNode(row) {
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    project_id: row.project_id,
+    parent_id: row.parent_id,
+    name: row.name,
+    code: row.code,
+    sort_order: Number(row.sort_order || 0),
+    created_by: row.created_by || null,
+    updated_by: row.updated_by || null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function buildParentClause(parentId, startIndex = 2) {
+  if (parentId === null || parentId === undefined) {
+    return {
+      clause: 'parent_id IS NULL',
+      params: [],
+      nextIndex: startIndex,
+    };
+  }
+
+  return {
+    clause: `parent_id = $${startIndex}`,
+    params: [parentId],
+    nextIndex: startIndex + 1,
+  };
 }
 
 export const wbsRepository = {
-  findProjectById(projectId) {
-    return db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) || null;
+  async findProjectById(projectId, executor = pool) {
+    const result = await executor.query(
+      `
+        SELECT id, code, name, description, status, created_at, updated_at
+        FROM projects
+        WHERE id = $1
+      `,
+      [projectId]
+    );
+
+    return result.rows[0] || null;
   },
 
-  listByProject(projectId) {
-    return db
-      .prepare(`
-        SELECT *
-        FROM wbs
-        WHERE project_id = ?
-        ORDER BY parent_id IS NOT NULL, parent_id, sort_order, name, id
-      `)
-      .all(projectId);
+  async listByProject(projectId, executor = pool) {
+    const result = await executor.query(
+      `
+        SELECT id, project_id, parent_id, name, code, sort_order, created_by, updated_by, created_at, updated_at
+        FROM wbs_nodes
+        WHERE project_id = $1
+        ORDER BY sort_order ASC, name ASC, id ASC
+      `,
+      [projectId]
+    );
+
+    return result.rows.map(mapWbsNode);
   },
 
-  findById(id) {
-    return db.prepare('SELECT * FROM wbs WHERE id = ?').get(id) || null;
+  async findById(id, executor = pool) {
+    const result = await executor.query(
+      `
+        SELECT id, project_id, parent_id, name, code, sort_order, created_by, updated_by, created_at, updated_at
+        FROM wbs_nodes
+        WHERE id = $1
+      `,
+      [id]
+    );
+
+    return mapWbsNode(result.rows[0]);
   },
 
-  listChildren(projectId, parentId) {
-    const predicate = getParentPredicate(parentId);
-    return db
-      .prepare(`
-        SELECT *
-        FROM wbs
-        WHERE project_id = ?
+  async listChildren(projectId, parentId, executor = pool) {
+    const predicate = buildParentClause(parentId, 2);
+    const result = await executor.query(
+      `
+        SELECT id, project_id, parent_id, name, code, sort_order, created_by, updated_by, created_at, updated_at
+        FROM wbs_nodes
+        WHERE project_id = $1
           AND ${predicate.clause}
         ORDER BY sort_order ASC, name ASC, id ASC
-      `)
-      .all(projectId, ...predicate.params);
+      `,
+      [projectId, ...predicate.params]
+    );
+
+    return result.rows.map(mapWbsNode);
   },
 
-  getMaxSortOrder(projectId, parentId) {
-    const predicate = getParentPredicate(parentId);
-    const row = db
-      .prepare(`
+  async getMaxSortOrder(projectId, parentId, executor = pool) {
+    const predicate = buildParentClause(parentId, 2);
+    const result = await executor.query(
+      `
         SELECT COALESCE(MAX(sort_order), 0) AS value
-        FROM wbs
-        WHERE project_id = ?
+        FROM wbs_nodes
+        WHERE project_id = $1
           AND ${predicate.clause}
-      `)
-      .get(projectId, ...predicate.params);
+      `,
+      [projectId, ...predicate.params]
+    );
 
-    return Number(row?.value || 0);
+    return Number(result.rows[0]?.value || 0);
   },
 
-  create(node) {
-    db.prepare(`
-      INSERT INTO wbs (id, project_id, parent_id, name, code, sort_order)
-      VALUES (@id, @project_id, @parent_id, @name, @code, @sort_order)
-    `).run(node);
+  async create(node, executor = pool) {
+    const result = await executor.query(
+      `
+        INSERT INTO wbs_nodes (project_id, parent_id, name, code, sort_order, created_by, updated_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id, project_id, parent_id, name, code, sort_order, created_by, updated_by, created_at, updated_at
+      `,
+      [
+        node.project_id,
+        node.parent_id,
+        node.name,
+        node.code,
+        node.sort_order,
+        node.created_by || null,
+        node.updated_by || null,
+      ]
+    );
 
-    return this.findById(node.id);
+    return mapWbsNode(result.rows[0]);
   },
 
-  update(nodeId, changes) {
-    db.prepare(`
-      UPDATE wbs
-      SET name = ?, parent_id = ?, code = ?, sort_order = ?
-      WHERE id = ?
-    `).run(changes.name, changes.parent_id, changes.code, changes.sort_order, nodeId);
+  async update(nodeId, changes, executor = pool) {
+    const result = await executor.query(
+      `
+        UPDATE wbs_nodes
+        SET
+          name = $2,
+          parent_id = $3,
+          code = $4,
+          sort_order = $5,
+          updated_by = $6,
+          updated_at = NOW()
+        WHERE id = $1
+        RETURNING id, project_id, parent_id, name, code, sort_order, created_by, updated_by, created_at, updated_at
+      `,
+      [
+        nodeId,
+        changes.name,
+        changes.parent_id,
+        changes.code,
+        changes.sort_order,
+        changes.updated_by || null,
+      ]
+    );
 
-    return this.findById(nodeId);
+    return mapWbsNode(result.rows[0]);
   },
 
-  updateHierarchy(nodeId, parentId, sortOrder) {
-    db.prepare(`
-      UPDATE wbs
-      SET parent_id = ?, sort_order = ?
-      WHERE id = ?
-    `).run(parentId, sortOrder, nodeId);
+  async updateHierarchy(nodeId, parentId, sortOrder, updatedBy = null, executor = pool) {
+    await executor.query(
+      `
+        UPDATE wbs_nodes
+        SET
+          parent_id = $2,
+          sort_order = $3,
+          updated_by = COALESCE($4, updated_by),
+          updated_at = NOW()
+        WHERE id = $1
+      `,
+      [nodeId, parentId, sortOrder, updatedBy]
+    );
   },
 
-  updateSortOrder(nodeId, sortOrder) {
-    db.prepare('UPDATE wbs SET sort_order = ? WHERE id = ?').run(sortOrder, nodeId);
+  async updateSortOrder(nodeId, sortOrder, updatedBy = null, executor = pool) {
+    await executor.query(
+      `
+        UPDATE wbs_nodes
+        SET
+          sort_order = $2,
+          updated_by = COALESCE($3, updated_by),
+          updated_at = NOW()
+        WHERE id = $1
+      `,
+      [nodeId, sortOrder, updatedBy]
+    );
   },
 
-  updateCodeAndSort(nodeId, code, sortOrder) {
-    db.prepare(`
-      UPDATE wbs
-      SET code = ?, sort_order = ?
-      WHERE id = ?
-    `).run(code, sortOrder, nodeId);
+  async updateCodeAndSort(nodeId, code, sortOrder, updatedBy = null, executor = pool) {
+    await executor.query(
+      `
+        UPDATE wbs_nodes
+        SET
+          code = $2,
+          sort_order = $3,
+          updated_by = COALESCE($4, updated_by),
+          updated_at = NOW()
+        WHERE id = $1
+      `,
+      [nodeId, code, sortOrder, updatedBy]
+    );
   },
 
-  incrementSortOrdersFrom(projectId, parentId, startAt) {
-    const predicate = getParentPredicate(parentId);
-    db.prepare(`
-      UPDATE wbs
-      SET sort_order = sort_order + 1
-      WHERE project_id = ?
-        AND ${predicate.clause}
-        AND sort_order >= ?
-    `).run(projectId, ...predicate.params, startAt);
+  async incrementSortOrdersFrom(projectId, parentId, startAt, updatedBy = null, executor = pool) {
+    const predicate = buildParentClause(parentId, 2);
+    await executor.query(
+      `
+        UPDATE wbs_nodes
+        SET
+          sort_order = sort_order + 1,
+          updated_by = COALESCE($${predicate.nextIndex + 1}, updated_by),
+          updated_at = NOW()
+        WHERE project_id = $1
+          AND ${predicate.clause}
+          AND sort_order >= $${predicate.nextIndex}
+      `,
+      [projectId, ...predicate.params, startAt, updatedBy]
+    );
   },
 
-  remove(id) {
-    db.prepare('DELETE FROM wbs WHERE id = ?').run(id);
+  async remove(id, executor = pool) {
+    await executor.query(
+      `
+        DELETE FROM wbs_nodes
+        WHERE id = $1
+      `,
+      [id]
+    );
   },
 
-  transaction(callback) {
-    return db.transaction(callback)();
+  async transaction(callback) {
+    return withTransaction(callback);
   },
 };

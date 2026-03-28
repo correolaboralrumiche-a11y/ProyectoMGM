@@ -1,41 +1,141 @@
-import db from '../../config/db.js';
+import { pool } from '../../config/db.js';
 
 function mapProject(row) {
-  return row || null;
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    description: row.description || '',
+    status_code: row.status_code || row.status,
+    status_name: row.status_name || null,
+    status: row.status_name || row.status_code || row.status,
+    created_by: row.created_by || null,
+    updated_by: row.updated_by || null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
 }
 
 export const projectsRepository = {
-  list() {
-    return db
-      .prepare('SELECT * FROM projects ORDER BY datetime(created_at) DESC, name ASC')
-      .all()
-      .map(mapProject);
+  async list(executor = pool) {
+    const result = await executor.query(
+      `
+        SELECT
+          p.id,
+          p.code,
+          p.name,
+          p.description,
+          p.status AS status_code,
+          ps.name AS status_name,
+          p.created_by,
+          p.updated_by,
+          p.created_at,
+          p.updated_at
+        FROM projects p
+        LEFT JOIN project_statuses ps ON ps.code = p.status
+        ORDER BY p.created_at DESC, p.name ASC
+      `
+    );
+
+    return result.rows.map(mapProject);
   },
 
-  findById(id) {
-    return mapProject(db.prepare('SELECT * FROM projects WHERE id = ?').get(id));
+  async findById(id, executor = pool) {
+    const result = await executor.query(
+      `
+        SELECT
+          p.id,
+          p.code,
+          p.name,
+          p.description,
+          p.status AS status_code,
+          ps.name AS status_name,
+          p.created_by,
+          p.updated_by,
+          p.created_at,
+          p.updated_at
+        FROM projects p
+        LEFT JOIN project_statuses ps ON ps.code = p.status
+        WHERE p.id = $1
+      `,
+      [id]
+    );
+
+    return mapProject(result.rows[0]);
   },
 
-  create(project) {
-    db.prepare(`
-      INSERT INTO projects (id, name, description, created_at)
-      VALUES (@id, @name, @description, @created_at)
-    `).run(project);
+  async findByCode(code, executor = pool) {
+    const result = await executor.query(
+      `
+        SELECT
+          p.id,
+          p.code,
+          p.name,
+          p.description,
+          p.status AS status_code,
+          ps.name AS status_name,
+          p.created_by,
+          p.updated_by,
+          p.created_at,
+          p.updated_at
+        FROM projects p
+        LEFT JOIN project_statuses ps ON ps.code = p.status
+        WHERE p.code = $1
+      `,
+      [code]
+    );
 
-    return this.findById(project.id);
+    return mapProject(result.rows[0]);
   },
 
-  update(id, changes) {
-    db.prepare(`
-      UPDATE projects
-      SET name = ?, description = ?
-      WHERE id = ?
-    `).run(changes.name, changes.description, id);
+  async create(project, executor = pool) {
+    const result = await executor.query(
+      `
+        INSERT INTO projects (code, name, description, status, created_by, updated_by)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id
+      `,
+      [
+        project.code,
+        project.name,
+        project.description,
+        project.status_code,
+        project.created_by || null,
+        project.updated_by || null,
+      ]
+    );
 
-    return this.findById(id);
+    return this.findById(result.rows[0].id, executor);
   },
 
-  remove(id) {
-    db.prepare('DELETE FROM projects WHERE id = ?').run(id);
+  async update(id, changes, executor = pool) {
+    const result = await executor.query(
+      `
+        UPDATE projects
+        SET
+          name = $2,
+          description = $3,
+          status = $4,
+          updated_by = $5,
+          updated_at = NOW()
+        WHERE id = $1
+        RETURNING id
+      `,
+      [id, changes.name, changes.description, changes.status_code, changes.updated_by || null]
+    );
+
+    return this.findById(result.rows[0]?.id || id, executor);
+  },
+
+  async remove(id, executor = pool) {
+    await executor.query(
+      `
+        DELETE FROM projects
+        WHERE id = $1
+      `,
+      [id]
+    );
   },
 };

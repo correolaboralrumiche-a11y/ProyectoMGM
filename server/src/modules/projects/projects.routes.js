@@ -1,36 +1,41 @@
 import { Router } from 'express';
 import { ok } from '../../utils/http.js';
+import { requirePermission } from '../../middleware/authorize.js';
+import { buildRequestAuditContext } from '../../utils/audit.js';
 import { projectsService } from './projects.service.js';
 
 const router = Router();
 
-router.get('/', (req, res, next) => {
+router.get('/', requirePermission('projects.read'), async (req, res, next) => {
   try {
-    return ok(res, projectsService.listProjects());
+    return ok(res, await projectsService.listProjects());
   } catch (error) {
     return next(error);
   }
 });
 
-router.post('/', (req, res, next) => {
+router.post('/', requirePermission('projects.write'), async (req, res, next) => {
   try {
-    return ok(res, projectsService.createProject(req.body), 201);
+    return ok(res, await projectsService.createProject(req.body, req.auth, buildRequestAuditContext(req)), 201);
   } catch (error) {
     return next(error);
   }
 });
 
-router.put('/:id', (req, res, next) => {
+router.put('/:id', requirePermission('projects.write'), async (req, res, next) => {
   try {
-    return ok(res, projectsService.updateProject(req.params.id, req.body));
+    return ok(
+      res,
+      await projectsService.updateProject(req.params.id, req.body, req.auth, buildRequestAuditContext(req))
+    );
   } catch (error) {
     return next(error);
   }
 });
 
-router.delete('/:id', (req, res, next) => {
+router.delete('/:id', requirePermission('projects.delete'), async (req, res, next) => {
   try {
-    return ok(res, projectsService.deleteProject(req.params.id));
+    return ok(res, await projectsService.deleteProject(req.params.id, req.auth, buildRequestAuditContext(req)));
   } catch (error) {
     return next(error);
   }

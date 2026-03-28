@@ -4,34 +4,49 @@ import ProjectsTable from '../components/projects/ProjectsTable.jsx';
 import BaselinesTable from '../components/projects/BaselinesTable.jsx';
 import { projectsApi } from '../services/projectsApi.js';
 import { baselinesApi } from '../services/baselinesApi.js';
+import { catalogsApi } from '../services/catalogsApi.js';
 import { useBaselines } from '../hooks/useBaselines.js';
 
-const EMPTY_FORM = { name: '', description: '' };
+const EMPTY_FORM = { name: '', description: '', status: 'active' };
 const EMPTY_BASELINE_FORM = { name: '', description: '' };
 
-export default function ProjectsPage({
-  projects,
-  activeProjectId,
-  onProjectSelect,
-  reloadProjects,
-}) {
+export default function ProjectsPage({ projects, activeProjectId, onProjectSelect, reloadProjects }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState('');
   const [baselineForm, setBaselineForm] = useState(EMPTY_BASELINE_FORM);
   const [selectedBaselineId, setSelectedBaselineId] = useState('');
   const [creatingBaseline, setCreatingBaseline] = useState(false);
+  const [statusOptions, setStatusOptions] = useState([]);
 
   const activeProject = useMemo(
     () => projects.find((project) => project.id === activeProjectId) || null,
     [projects, activeProjectId]
   );
 
-  const {
-    baselines,
-    loading: baselinesLoading,
-    error: baselinesError,
-    reloadBaselines,
-  } = useBaselines(activeProjectId);
+  const { baselines, loading: baselinesLoading, error: baselinesError, reloadBaselines } = useBaselines(activeProjectId);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadStatusCatalog() {
+      try {
+        const response = await catalogsApi.get('project-statuses', { includeInactive: false });
+        if (!cancelled) {
+          setStatusOptions(Array.isArray(response?.items) ? response.items : []);
+        }
+      } catch {
+        if (!cancelled) {
+          setStatusOptions([]);
+        }
+      }
+    }
+
+    loadStatusCatalog();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!baselines.length) {
@@ -58,7 +73,6 @@ export default function ProjectsPage({
     } else {
       const created = await projectsApi.create(form);
       await reloadProjects(created?.id || null);
-
       if (created?.id) {
         await onProjectSelect(created.id);
       }
@@ -82,6 +96,7 @@ export default function ProjectsPage({
     setForm({
       name: project.name || '',
       description: project.description || '',
+      status: project.status_code || project.status || 'active',
     });
   }
 
@@ -96,7 +111,6 @@ export default function ProjectsPage({
 
   async function handleCreateBaseline(e) {
     e.preventDefault();
-
     if (!activeProjectId) {
       alert('Selecciona un proyecto activo.');
       return;
@@ -137,47 +151,49 @@ export default function ProjectsPage({
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[360px,1fr]">
+    <div className="grid gap-4 lg:grid-cols-[380px,1fr]">
       <div className="space-y-4">
-        <SectionCard
-          title={editingId ? 'Editar proyecto' : 'Nuevo proyecto'}
-          subtitle="Crea o actualiza la ficha principal del proyecto"
-        >
-          <form className="space-y-4" onSubmit={handleSubmit}>
+        <SectionCard title="Proyecto" subtitle="Crea o actualiza la cabecera principal del proyecto">
+          <form className="space-y-3" onSubmit={handleSubmit}>
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">Nombre</label>
               <input
                 value={form.name}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, name: e.target.value }))
-                }
+                onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2"
                 placeholder="Ej: Proyecto Mina Norte"
               />
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">
-                Descripción
-              </label>
+              <label className="text-sm font-medium text-slate-700">Estado</label>
+              <select
+                value={form.status}
+                onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              >
+                {(statusOptions.length ? statusOptions : [{ code: 'active', name: 'Activo' }]).map((option) => (
+                  <option key={option.code} value={option.code}>
+                    {option.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700">Descripción</label>
               <textarea
                 value={form.description}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, description: e.target.value }))
-                }
+                onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
                 className="min-h-28 w-full rounded-lg border border-slate-300 px-3 py-2"
                 placeholder="Descripción del proyecto"
               />
             </div>
 
             <div className="flex gap-2">
-              <button
-                type="submit"
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white"
-              >
+              <button type="submit" className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white">
                 {editingId ? 'Guardar cambios' : 'Crear proyecto'}
               </button>
-
               <button
                 type="button"
                 onClick={resetForm}
@@ -191,39 +207,29 @@ export default function ProjectsPage({
 
         <SectionCard
           title="Crear línea base"
-          subtitle={
-            activeProject
-              ? `Proyecto activo: ${activeProject.name}`
-              : 'Selecciona un proyecto para generar su línea base'
-          }
+          subtitle={activeProject ? `Proyecto activo: ${activeProject.name}` : 'Selecciona un proyecto para generar su línea base'}
         >
           <form className="space-y-3" onSubmit={handleCreateBaseline}>
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">Nombre</label>
               <input
                 value={baselineForm.name}
-                onChange={(e) =>
-                  setBaselineForm((prev) => ({ ...prev, name: e.target.value }))
-                }
+                onChange={(e) => setBaselineForm((prev) => ({ ...prev, name: e.target.value }))}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2"
                 placeholder="Ej: BL-01"
                 disabled={!activeProjectId || creatingBaseline}
               />
             </div>
-
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">Descripción</label>
               <textarea
                 value={baselineForm.description}
-                onChange={(e) =>
-                  setBaselineForm((prev) => ({ ...prev, description: e.target.value }))
-                }
+                onChange={(e) => setBaselineForm((prev) => ({ ...prev, description: e.target.value }))}
                 className="min-h-20 w-full rounded-lg border border-slate-300 px-3 py-2"
                 placeholder="Opcional"
                 disabled={!activeProjectId || creatingBaseline}
               />
             </div>
-
             <button
               type="submit"
               disabled={!activeProjectId || creatingBaseline}
@@ -231,19 +237,13 @@ export default function ProjectsPage({
             >
               {creatingBaseline ? 'Creando...' : 'Crear línea base'}
             </button>
-
-            {baselinesError ? (
-              <div className="text-sm text-rose-600">{baselinesError}</div>
-            ) : null}
+            {baselinesError ? <div className="text-sm text-rose-600">{baselinesError}</div> : null}
           </form>
         </SectionCard>
       </div>
 
       <div className="space-y-4">
-        <SectionCard
-          title="Lista de proyectos"
-          subtitle="Selecciona el proyecto activo para trabajar en WBS y actividades"
-        >
+        <SectionCard title="Lista de proyectos" subtitle="Selecciona el proyecto activo para trabajar en WBS y actividades">
           <ProjectsTable
             projects={projects}
             activeProjectId={activeProjectId}
@@ -253,14 +253,7 @@ export default function ProjectsPage({
           />
         </SectionCard>
 
-        <SectionCard
-          title="Líneas base del proyecto"
-          subtitle={
-            activeProject
-              ? 'Snapshots congelados del proyecto activo'
-              : 'No hay proyecto activo'
-          }
-        >
+        <SectionCard title="Líneas base del proyecto" subtitle={activeProject ? 'Snapshots congelados del proyecto activo' : 'No hay proyecto activo'}>
           <BaselinesTable
             baselines={baselines}
             loading={baselinesLoading}

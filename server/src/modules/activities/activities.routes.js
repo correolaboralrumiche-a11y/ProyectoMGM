@@ -1,36 +1,66 @@
 import { Router } from 'express';
 import { ok } from '../../utils/http.js';
+import { requirePermission } from '../../middleware/authorize.js';
+import { buildRequestAuditContext } from '../../utils/audit.js';
 import { activitiesService } from './activities.service.js';
 
 const router = Router();
 
-router.get('/', (req, res, next) => {
+router.get('/', requirePermission('activities.read'), async (req, res, next) => {
   try {
-    return ok(res, activitiesService.listActivities(req.query.projectId));
+    return ok(res, await activitiesService.listActivities(req.query.projectId));
   } catch (error) {
     return next(error);
   }
 });
 
-router.post('/', (req, res, next) => {
+router.post('/', requirePermission('activities.write'), async (req, res, next) => {
   try {
-    return ok(res, activitiesService.createActivity(req.body), 201);
+    return ok(res, await activitiesService.createActivity(req.body, req.auth, buildRequestAuditContext(req)), 201);
   } catch (error) {
     return next(error);
   }
 });
 
-router.put('/:id', (req, res, next) => {
+router.put('/:id', requirePermission('activities.write'), async (req, res, next) => {
   try {
-    return ok(res, activitiesService.updateActivity(req.params.id, req.body));
+    return ok(
+      res,
+      await activitiesService.updateActivity(req.params.id, req.body, req.auth, buildRequestAuditContext(req))
+    );
   } catch (error) {
     return next(error);
   }
 });
 
-router.delete('/:id', (req, res, next) => {
+router.post('/:id/move-up', requirePermission('activities.write'), async (req, res, next) => {
   try {
-    return ok(res, activitiesService.deleteActivity(req.params.id));
+    return ok(
+      res,
+      await activitiesService.moveActivity(req.params.id, 'up', req.auth, buildRequestAuditContext(req))
+    );
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/:id/move-down', requirePermission('activities.write'), async (req, res, next) => {
+  try {
+    return ok(
+      res,
+      await activitiesService.moveActivity(req.params.id, 'down', req.auth, buildRequestAuditContext(req))
+    );
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.delete('/:id', requirePermission('activities.delete'), async (req, res, next) => {
+  try {
+    return ok(
+      res,
+      await activitiesService.deleteActivity(req.params.id, req.auth, buildRequestAuditContext(req))
+    );
   } catch (error) {
     return next(error);
   }

@@ -1,41 +1,40 @@
 import { Router } from 'express';
+import { ok } from '../../utils/http.js';
+import { requirePermission } from '../../middleware/authorize.js';
+import { buildRequestAuditContext } from '../../utils/audit.js';
 import { baselinesService } from './baselines.service.js';
 
 const router = Router();
 
-router.get('/', (req, res, next) => {
+router.get('/', requirePermission('baselines.read'), async (req, res, next) => {
   try {
-    const data = baselinesService.listBaselines(req.query.projectId);
-    res.json({ success: true, data });
+    return ok(res, await baselinesService.listBaselines(req.query.projectId));
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
-router.post('/', (req, res, next) => {
+router.post('/', requirePermission('baselines.write'), async (req, res, next) => {
   try {
-    const data = baselinesService.createBaseline(req.body);
-    res.status(201).json({ success: true, data });
+    return ok(res, await baselinesService.createBaseline(req.body, req.auth, buildRequestAuditContext(req)), 201);
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
-router.get('/:id', (req, res, next) => {
+router.get('/:id', requirePermission('baselines.read'), async (req, res, next) => {
   try {
-    const data = baselinesService.getBaseline(req.params.id);
-    res.json({ success: true, data });
+    return ok(res, await baselinesService.getBaseline(req.params.id));
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
-router.delete('/:id', (req, res, next) => {
+router.delete('/:id', requirePermission('baselines.delete'), async (req, res, next) => {
   try {
-    const data = baselinesService.deleteBaseline(req.params.id);
-    res.json({ success: true, data });
+    return ok(res, await baselinesService.deleteBaseline(req.params.id, req.auth, buildRequestAuditContext(req)));
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 

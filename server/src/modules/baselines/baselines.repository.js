@@ -1,44 +1,34 @@
-import db from '../../config/db.js';
+import { pool } from '../../config/db.js';
+
+function mapBaseline(row) {
+  if (!row) return null;
+
+  return {
+    ...row,
+    wbs_count: Number(row.wbs_count || 0),
+    activities_count: Number(row.activities_count || 0),
+    created_by: row.created_by || null,
+    updated_by: row.updated_by || null,
+  };
+}
 
 export const baselinesRepository = {
-  findProjectById(projectId) {
-    return db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) || null;
-  },
-
-  findBaselineById(baselineId) {
-    return (
-      db
-        .prepare(`
-          SELECT
-            pb.*,
-            (
-              SELECT COUNT(*)
-              FROM baseline_wbs bw
-              WHERE bw.baseline_id = pb.id
-            ) AS wbs_count,
-            (
-              SELECT COUNT(*)
-              FROM baseline_activities ba
-              WHERE ba.baseline_id = pb.id
-            ) AS activities_count
-          FROM project_baselines pb
-          WHERE pb.id = ?
-        `)
-        .get(baselineId) || null
+  async findProjectById(projectId, executor = pool) {
+    const result = await executor.query(
+      `
+        SELECT id, code, name, description, status, created_at, updated_at
+        FROM projects
+        WHERE id = $1
+      `,
+      [projectId]
     );
+
+    return result.rows[0] || null;
   },
 
-  findBaselineByProjectAndName(projectId, name) {
-    return (
-      db
-        .prepare('SELECT * FROM project_baselines WHERE project_id = ? AND name = ?')
-        .get(projectId, name) || null
-    );
-  },
-
-  listByProject(projectId) {
-    return db
-      .prepare(`
+  async findBaselineById(baselineId, executor = pool) {
+    const result = await executor.query(
+      `
         SELECT
           pb.*,
           (
@@ -52,39 +42,103 @@ export const baselinesRepository = {
             WHERE ba.baseline_id = pb.id
           ) AS activities_count
         FROM project_baselines pb
-        WHERE pb.project_id = ?
-        ORDER BY datetime(pb.created_at) DESC, pb.name COLLATE NOCASE ASC
-      `)
-      .all(projectId);
+        WHERE pb.id = $1
+      `,
+      [baselineId]
+    );
+
+    return mapBaseline(result.rows[0]);
   },
 
-  listProjectWbs(projectId) {
-    return db
-      .prepare(`
+  async findBaselineByProjectAndName(projectId, name, executor = pool) {
+    const result = await executor.query(
+      `
         SELECT *
-        FROM wbs
-        WHERE project_id = ?
-        ORDER BY code ASC, sort_order ASC, name COLLATE NOCASE ASC
-      `)
-      .all(projectId);
+        FROM project_baselines
+        WHERE project_id = $1
+          AND name = $2
+      `,
+      [projectId, name]
+    );
+
+    return result.rows[0] || null;
   },
 
-  listProjectActivities(projectId) {
-    return db
-      .prepare(`
-        SELECT *
-        FROM activities
-        WHERE project_id = ?
-        ORDER BY sort_order ASC, activity_id COLLATE NOCASE ASC, name COLLATE NOCASE ASC
-      `)
-      .all(projectId);
+  async listByProject(projectId, executor = pool) {
+    const result = await executor.query(
+      `
+        SELECT
+          pb.*,
+          (
+            SELECT COUNT(*)
+            FROM baseline_wbs bw
+            WHERE bw.baseline_id = pb.id
+          ) AS wbs_count,
+          (
+            SELECT COUNT(*)
+            FROM baseline_activities ba
+            WHERE ba.baseline_id = pb.id
+          ) AS activities_count
+        FROM project_baselines pb
+        WHERE pb.project_id = $1
+        ORDER BY pb.created_at DESC, LOWER(pb.name) ASC
+      `,
+      [projectId]
+    );
+
+    return result.rows.map(mapBaseline);
   },
 
-  createSnapshot(payload) {
-    const tx = db.transaction((snapshot) => {
-      db.prepare(`
+  async listProjectWbs(projectId, executor = pool) {
+    const result = await executor.query(
+      `
+        SELECT id, project_id, parent_id, name, code, sort_order, created_at, updated_at
+        FROM wbs_nodes
+        WHERE project_id = $1
+        ORDER BY code ASC, sort_order ASC, name ASC
+      `,
+      [projectId]
+    );
+
+    return result.rows;
+  },
+
+  async listProjectActivities(projectId, executor = pool) {
+    const result = await executor.query(
+      `
+        SELECT
+          a.id,
+          a.project_id,
+          a.wbs_id,
+          a.activity_id,
+          a.name,
+          a.start_date,
+          a.finish_date AS end_date,
+          a.duration_days AS duration,
+          a.progress_percent AS progress,
+          a.budget_hours AS hours,
+          a.budget_cost AS cost,
+          COALESCE(s.name, a.status) AS status,
+          a.sort_order,
+          a.created_at,
+          a.updated_at,
+          w.code AS wbs_code
+        FROM activities a
+        LEFT JOIN activity_statuses s ON s.code = a.status
+        INNER JOIN wbs_nodes w ON w.id = a.wbs_id
+        WHERE a.project_id = $1
+        ORDER BY w.code ASC, a.sort_order ASC, LOWER(a.activity_id) ASC, LOWER(a.name) ASC, a.id ASC
+      `,
+      [projectId]
+    );
+
+    return result.rows;
+  },
+
+  async createSnapshot(payload, executor = pool) {
+    const baselineInsert = await executor.query(
+      `
         INSERT INTO project_baselines (
-          id,
           project_id,
           name,
           description,
@@ -92,128 +146,211 @@ export const baselinesRepository = {
           project_description_snapshot,
           source_project_created_at,
           created_at,
-          baseline_type
+          baseline_type,
+          created_by,
+          updated_by
         ) VALUES (
-          @id,
-          @project_id,
-          @name,
-          @description,
-          @project_name_snapshot,
-          @project_description_snapshot,
-          @source_project_created_at,
-          @created_at,
-          @baseline_type
+          $1,
+          $2,
+          $3,
+          $4,
+          $5,
+          $6,
+          $7,
+          $8,
+          $9,
+          $10
         )
-      `).run(snapshot.baseline);
+        RETURNING id
+      `,
+      [
+        payload.baseline.project_id,
+        payload.baseline.name,
+        payload.baseline.description,
+        payload.baseline.project_name_snapshot,
+        payload.baseline.project_description_snapshot,
+        payload.baseline.source_project_created_at,
+        payload.baseline.created_at,
+        payload.baseline.baseline_type,
+        payload.baseline.created_by || null,
+        payload.baseline.updated_by || null,
+      ]
+    );
 
-      const insertBaselineWbs = db.prepare(`
-        INSERT INTO baseline_wbs (
-          id,
-          baseline_id,
-          source_wbs_id,
-          parent_id,
-          name,
-          code,
-          sort_order
-        ) VALUES (
-          @id,
-          @baseline_id,
-          @source_wbs_id,
-          @parent_id,
-          @name,
-          @code,
-          @sort_order
-        )
-      `);
+    const baselineId = baselineInsert.rows[0].id;
+    const baselineWbsIdBySourceId = new Map();
 
-      for (const row of snapshot.baselineWbs) {
-        insertBaselineWbs.run(row);
-      }
+    for (const row of payload.baselineWbs) {
+      const inserted = await executor.query(
+        `
+          INSERT INTO baseline_wbs (
+            baseline_id,
+            source_wbs_id,
+            parent_id,
+            name,
+            code,
+            sort_order
+          ) VALUES ($1, $2, NULL, $3, $4, $5)
+          RETURNING id
+        `,
+        [baselineId, row.source_wbs_id, row.name, row.code, row.sort_order]
+      );
 
-      const insertBaselineActivity = db.prepare(`
-        INSERT INTO baseline_activities (
-          id,
-          baseline_id,
-          baseline_wbs_id,
-          source_activity_id,
-          project_id,
-          activity_id,
-          name,
-          start_date,
-          end_date,
-          duration,
-          progress,
-          hours,
-          cost,
-          status,
-          sort_order,
-          source_created_at,
-          source_updated_at,
-          created_at
-        ) VALUES (
-          @id,
-          @baseline_id,
-          @baseline_wbs_id,
-          @source_activity_id,
-          @project_id,
-          @activity_id,
-          @name,
-          @start_date,
-          @end_date,
-          @duration,
-          @progress,
-          @hours,
-          @cost,
-          @status,
-          @sort_order,
-          @source_created_at,
-          @source_updated_at,
-          @created_at
-        )
-      `);
+      baselineWbsIdBySourceId.set(row.source_wbs_id, inserted.rows[0].id);
+    }
 
-      for (const row of snapshot.baselineActivities) {
-        insertBaselineActivity.run(row);
-      }
-    });
+    for (const row of payload.baselineWbs) {
+      const baselineWbsId = baselineWbsIdBySourceId.get(row.source_wbs_id);
+      const baselineParentId = row.parent_source_wbs_id
+        ? baselineWbsIdBySourceId.get(row.parent_source_wbs_id) || null
+        : null;
 
-    tx(payload);
-    return this.findBaselineById(payload.baseline.id);
+      await executor.query(
+        `
+          UPDATE baseline_wbs
+          SET parent_id = $2
+          WHERE id = $1
+        `,
+        [baselineWbsId, baselineParentId]
+      );
+    }
+
+    for (const row of payload.baselineActivities) {
+      const baselineWbsId = baselineWbsIdBySourceId.get(row.source_wbs_id);
+
+      await executor.query(
+        `
+          INSERT INTO baseline_activities (
+            baseline_id,
+            baseline_wbs_id,
+            source_activity_id,
+            project_id,
+            activity_id,
+            name,
+            start_date,
+            end_date,
+            duration,
+            progress,
+            hours,
+            cost,
+            status,
+            sort_order,
+            source_created_at,
+            source_updated_at,
+            created_at
+          ) VALUES (
+            $1,
+            $2,
+            $3,
+            $4,
+            $5,
+            $6,
+            $7,
+            $8,
+            $9,
+            $10,
+            $11,
+            $12,
+            $13,
+            $14,
+            $15,
+            $16,
+            $17
+          )
+        `,
+        [
+          baselineId,
+          baselineWbsId,
+          row.source_activity_id,
+          row.project_id,
+          row.activity_id,
+          row.name,
+          row.start_date,
+          row.end_date,
+          row.duration,
+          row.progress,
+          row.hours,
+          row.cost,
+          row.status,
+          row.sort_order,
+          row.source_created_at,
+          row.source_updated_at,
+          row.created_at,
+        ]
+      );
+    }
+
+    return this.findBaselineById(baselineId, executor);
   },
 
-  getBaselineHeader(baselineId) {
-    return db
-      .prepare('SELECT * FROM project_baselines WHERE id = ?')
-      .get(baselineId) || null;
+  async getBaselineHeader(baselineId, executor = pool) {
+    const result = await executor.query(
+      `
+        SELECT id, project_id, name, description, baseline_type, created_at, created_by, updated_by
+        FROM project_baselines
+        WHERE id = $1
+      `,
+      [baselineId]
+    );
+
+    return result.rows[0] || null;
   },
 
-  getBaselineWbs(baselineId) {
-    return db
-      .prepare(`
-        SELECT *
+  async getBaselineWbs(baselineId, executor = pool) {
+    const result = await executor.query(
+      `
+        SELECT id, baseline_id, source_wbs_id, parent_id, name, code, sort_order
         FROM baseline_wbs
-        WHERE baseline_id = ?
-        ORDER BY code ASC, sort_order ASC, name COLLATE NOCASE ASC
-      `)
-      .all(baselineId);
+        WHERE baseline_id = $1
+        ORDER BY code ASC, sort_order ASC, name ASC
+      `,
+      [baselineId]
+    );
+
+    return result.rows;
   },
 
-  getBaselineActivities(baselineId) {
-    return db
-      .prepare(`
+  async getBaselineActivities(baselineId, executor = pool) {
+    const result = await executor.query(
+      `
         SELECT
-          ba.*,
-          bw.name AS wbs_name,
-          bw.code AS wbs_code
+          ba.id,
+          ba.baseline_id,
+          ba.baseline_wbs_id,
+          ba.source_activity_id AS original_activity_id,
+          ba.project_id,
+          ba.activity_id,
+          ba.name,
+          ba.start_date,
+          ba.end_date,
+          ba.duration,
+          ba.progress,
+          ba.hours,
+          ba.cost,
+          ba.status,
+          ba.sort_order,
+          ba.source_created_at,
+          ba.source_updated_at,
+          bw.code AS wbs_code,
+          bw.name AS wbs_name
         FROM baseline_activities ba
         INNER JOIN baseline_wbs bw ON bw.id = ba.baseline_wbs_id
-        WHERE ba.baseline_id = ?
-        ORDER BY bw.code ASC, ba.sort_order ASC, ba.activity_id COLLATE NOCASE ASC
-      `)
-      .all(baselineId);
+        WHERE ba.baseline_id = $1
+        ORDER BY bw.code ASC, ba.sort_order ASC, LOWER(ba.activity_id) ASC, LOWER(ba.name) ASC, ba.id ASC
+      `,
+      [baselineId]
+    );
+
+    return result.rows;
   },
 
-  removeBaseline(baselineId) {
-    db.prepare('DELETE FROM project_baselines WHERE id = ?').run(baselineId);
+  async removeBaseline(baselineId, executor = pool) {
+    await executor.query(
+      `
+        DELETE FROM project_baselines
+        WHERE id = $1
+      `,
+      [baselineId]
+    );
   },
 };

@@ -1,10 +1,42 @@
+function parseIsoDate(value) {
+  if (value === null || value === undefined || value === '') return null;
+
+  const normalized = String(value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return null;
+  }
+
+  const parsed = new Date(`${normalized}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  const [year, month, day] = normalized.split('-').map(Number);
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() + 1 !== month ||
+    parsed.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return parsed;
+}
+
+export function normalizeOptionalDate(value) {
+  if (value === null || value === undefined) return null;
+
+  const normalized = String(value).trim();
+  if (!normalized) return null;
+
+  return normalized;
+}
+
 export function computeDuration(startDate, endDate) {
-  if (!startDate || !endDate) return 0;
+  const start = parseIsoDate(startDate);
+  const end = parseIsoDate(endDate);
 
-  const start = new Date(`${startDate}T00:00:00`);
-  const end = new Date(`${endDate}T00:00:00`);
-
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
+  if (!start || !end) return 0;
 
   const diff = Math.round((end - start) / (1000 * 60 * 60 * 24));
   return diff >= 0 ? diff : 0;
@@ -13,9 +45,9 @@ export function computeDuration(startDate, endDate) {
 export function isValidDateRange(startDate, endDate) {
   if (!startDate || !endDate) return true;
 
-  const start = new Date(`${startDate}T00:00:00`);
-  const end = new Date(`${endDate}T00:00:00`);
+  const start = parseIsoDate(startDate);
+  const end = parseIsoDate(endDate);
 
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return false;
+  if (!start || !end) return false;
   return end >= start;
 }
