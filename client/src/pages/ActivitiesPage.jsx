@@ -4,21 +4,37 @@ import DataTable from '../components/activities/DataTable.jsx';
 import { activitiesApi } from '../services/activitiesApi.js';
 import { api } from '../services/api.js';
 
+function normalizeDateValue(value) {
+  if (value === null || value === undefined || value === '') return null;
+
+  const normalized = String(value).trim();
+  if (!normalized) return null;
+
+  const match = normalized.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : normalized;
+}
+
+
 function getEarliestDate(values) {
-  const filtered = values.filter(Boolean).sort();
+  const filtered = values.map(normalizeDateValue).filter(Boolean).sort();
   return filtered[0] || null;
 }
 
 function getLatestDate(values) {
-  const filtered = values.filter(Boolean).sort();
+  const filtered = values.map(normalizeDateValue).filter(Boolean).sort();
   return filtered[filtered.length - 1] || null;
 }
 
 function computeDuration(startDate, endDate) {
   if (!startDate || !endDate) return 0;
 
-  const start = new Date(`${startDate}T00:00:00`);
-  const end = new Date(`${endDate}T00:00:00`);
+  const normalizedStart = normalizeDateValue(startDate);
+  const normalizedEnd = normalizeDateValue(endDate);
+
+  if (!normalizedStart || !normalizedEnd) return 0;
+
+  const start = new Date(`${normalizedStart}T00:00:00`);
+  const end = new Date(`${normalizedEnd}T00:00:00`);
 
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
 
@@ -111,7 +127,15 @@ function buildWbsRows(tree, activities, baselineMap) {
 
       return {
         ...activity,
-        baseline,
+        start_date: normalizeDateValue(activity.start_date),
+        end_date: normalizeDateValue(activity.end_date),
+        baseline: baseline
+          ? {
+              ...baseline,
+              start_date: normalizeDateValue(baseline.start_date),
+              end_date: normalizeDateValue(baseline.end_date),
+            }
+          : null,
       };
     });
 
@@ -141,10 +165,20 @@ function buildWbsRows(tree, activities, baselineMap) {
     .reduce((map, activity) => {
       const key = activity.wbs_id || '__unknown__';
       const list = map.get(key) || [];
+      const baseline =
+        baselineMap.get(`original:${activity.id}`) || baselineMap.get(`activity:${activity.activity_id}`) || null;
+
       list.push({
         ...activity,
-        baseline:
-          baselineMap.get(`original:${activity.id}`) || baselineMap.get(`activity:${activity.activity_id}`) || null,
+        start_date: normalizeDateValue(activity.start_date),
+        end_date: normalizeDateValue(activity.end_date),
+        baseline: baseline
+          ? {
+              ...baseline,
+              start_date: normalizeDateValue(baseline.start_date),
+              end_date: normalizeDateValue(baseline.end_date),
+            }
+          : null,
       });
       map.set(key, list);
       return map;

@@ -14,7 +14,7 @@ router.get('/', requirePermission('wbs.read'), async (req, res, next) => {
   }
 });
 
-router.post('/', requirePermission('wbs.write'), async (req, res, next) => {
+router.post('/', requirePermission('wbs.create'), async (req, res, next) => {
   try {
     return ok(res, await wbsService.createNode(req.body, req.auth, buildRequestAuditContext(req)), 201);
   } catch (error) {
@@ -22,7 +22,7 @@ router.post('/', requirePermission('wbs.write'), async (req, res, next) => {
   }
 });
 
-router.put('/:id', requirePermission('wbs.write'), async (req, res, next) => {
+router.put('/:id', requirePermission('wbs.update'), async (req, res, next) => {
   try {
     return ok(res, await wbsService.updateNode(req.params.id, req.body, req.auth, buildRequestAuditContext(req)));
   } catch (error) {
@@ -30,7 +30,7 @@ router.put('/:id', requirePermission('wbs.write'), async (req, res, next) => {
   }
 });
 
-router.post('/:id/indent', requirePermission('wbs.write'), async (req, res, next) => {
+router.post('/:id/indent', requirePermission('wbs.reorder'), async (req, res, next) => {
   try {
     return ok(res, await wbsService.indentNode(req.params.id, req.auth, buildRequestAuditContext(req)));
   } catch (error) {
@@ -38,7 +38,7 @@ router.post('/:id/indent', requirePermission('wbs.write'), async (req, res, next
   }
 });
 
-router.post('/:id/outdent', requirePermission('wbs.write'), async (req, res, next) => {
+router.post('/:id/outdent', requirePermission('wbs.reorder'), async (req, res, next) => {
   try {
     return ok(res, await wbsService.outdentNode(req.params.id, req.auth, buildRequestAuditContext(req)));
   } catch (error) {
@@ -46,7 +46,7 @@ router.post('/:id/outdent', requirePermission('wbs.write'), async (req, res, nex
   }
 });
 
-router.post('/:id/move-up', requirePermission('wbs.write'), async (req, res, next) => {
+router.post('/:id/move-up', requirePermission('wbs.reorder'), async (req, res, next) => {
   try {
     return ok(res, await wbsService.moveNode(req.params.id, 'up', req.auth, buildRequestAuditContext(req)));
   } catch (error) {
@@ -54,7 +54,7 @@ router.post('/:id/move-up', requirePermission('wbs.write'), async (req, res, nex
   }
 });
 
-router.post('/:id/move-down', requirePermission('wbs.write'), async (req, res, next) => {
+router.post('/:id/move-down', requirePermission('wbs.reorder'), async (req, res, next) => {
   try {
     return ok(res, await wbsService.moveNode(req.params.id, 'down', req.auth, buildRequestAuditContext(req)));
   } catch (error) {

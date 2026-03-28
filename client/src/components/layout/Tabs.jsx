@@ -1,19 +1,14 @@
-const baseTabs = [
+const TAB_DEFINITIONS = [
   { key: 'projects', label: 'Proyectos' },
   { key: 'wbs', label: 'WBS' },
   { key: 'activities', label: 'Actividades' },
+  { key: 'catalogs', label: 'Catálogos' },
+  { key: 'audit', label: 'Auditoría' },
 ];
 
-export default function Tabs({ activeTab, onChange, canViewAudit = false, canViewCatalogs = false }) {
-  const tabs = [...baseTabs];
-
-  if (canViewCatalogs) {
-    tabs.push({ key: 'catalogs', label: 'Catálogos' });
-  }
-
-  if (canViewAudit) {
-    tabs.push({ key: 'audit', label: 'Auditoría' });
-  }
+export default function Tabs({ activeTab, onChange, visibleTabs = [] }) {
+  const visibility = new Set((visibleTabs || []).filter(Boolean));
+  const tabs = TAB_DEFINITIONS.filter((tab) => visibility.has(tab.key));
 
   return (
     <div className="flex flex-wrap gap-2">

@@ -14,7 +14,7 @@ router.get('/', requirePermission('projects.read'), async (req, res, next) => {
   }
 });
 
-router.post('/', requirePermission('projects.write'), async (req, res, next) => {
+router.post('/', requirePermission('projects.create'), async (req, res, next) => {
   try {
     return ok(res, await projectsService.createProject(req.body, req.auth, buildRequestAuditContext(req)), 201);
   } catch (error) {
@@ -22,7 +22,7 @@ router.post('/', requirePermission('projects.write'), async (req, res, next) => 
   }
 });
 
-router.put('/:id', requirePermission('projects.write'), async (req, res, next) => {
+router.put('/:id', requirePermission('projects.update'), async (req, res, next) => {
   try {
     return ok(
       res,

@@ -1,7 +1,12 @@
 import { AppError } from '../errors/AppError.js';
+import { actorHasPermission, actorHasRole } from '../utils/access.js';
+
+export { actorHasPermission, actorHasRole };
 
 export function requirePermission(...permissionCodes) {
-  const expected = permissionCodes.filter(Boolean);
+  const expected = permissionCodes
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean);
 
   return (req, res, next) => {
     const session = req.auth;
@@ -9,17 +14,11 @@ export function requirePermission(...permissionCodes) {
       return next(new AppError('Authentication required', 401));
     }
 
-    const roles = new Set((session.user.roles || []).map((value) => String(value || '').toLowerCase()));
-    if (roles.has('admin')) {
-      return next();
-    }
-
     if (!expected.length) {
       return next();
     }
 
-    const permissions = new Set((session.user.permissions || []).map((value) => String(value || '').trim()));
-    const allowed = expected.some((code) => permissions.has(code));
+    const allowed = expected.some((code) => actorHasPermission(session, code));
 
     if (!allowed) {
       return next(new AppError('Forbidden', 403));

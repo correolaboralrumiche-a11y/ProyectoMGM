@@ -1,4 +1,5 @@
 import { AppError } from '../errors/AppError.js';
+import { logger } from '../utils/logger.js';
 
 const POSTGRES_ERROR_MAP = {
   '23505': { status: 409, message: 'Unique constraint violation' },
@@ -10,7 +11,6 @@ const POSTGRES_ERROR_MAP = {
 
 function buildConstraintMessage(err) {
   const constraint = String(err?.constraint || '').trim();
-
   if (!constraint) return null;
 
   if (constraint.includes('activity_id')) {
@@ -48,15 +48,27 @@ export function errorHandler(err, req, res, next) {
     message = buildConstraintMessage(err) || POSTGRES_ERROR_MAP[err.code].message;
   }
 
+  const logPayload = {
+    request_id: req?.requestId || null,
+    method: req?.method || null,
+    url: req?.originalUrl || req?.url || null,
+    status,
+    error_name: err?.name || 'Error',
+    message: err?.message || message,
+    details: err instanceof AppError ? err.details || null : null,
+    stack: err?.stack || null,
+  };
+
   if (status >= 500) {
-    console.error(err);
+    logger.error('Unhandled request error', logPayload);
   } else {
-    console.warn(err?.message || err);
+    logger.warn('Handled request error', logPayload);
   }
 
   return res.status(status).json({
     success: false,
     error: message,
+    request_id: req?.requestId || null,
     ...(err instanceof AppError && err.details ? { details: err.details } : {}),
   });
 }

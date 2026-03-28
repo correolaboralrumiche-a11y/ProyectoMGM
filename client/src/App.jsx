@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import AppShell from './components/layout/AppShell.jsx';
 import Tabs from './components/layout/Tabs.jsx';
+import InlineAlert from './components/common/InlineAlert.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import ProjectsPage from './pages/ProjectsPage.jsx';
 import WBSPage from './pages/WBSPage.jsx';
@@ -15,98 +16,201 @@ import { useActivities } from './hooks/useActivities.js';
 function LoadingScreen() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-100 text-slate-700">
-      Cargando ERP...
+      Cargando seguridad ERP...
     </div>
   );
 }
 
-function hasAccess(user, permissionCode) {
-  const roles = new Set((user?.roles || []).map((value) => String(value || '').toLowerCase()));
-  if (roles.has('admin')) return true;
-
-  const permissions = new Set((user?.permissions || []).map((value) => String(value || '').trim()));
-  return permissions.has(permissionCode);
+function getVisibleTabs(permissions) {
+  const tabs = [];
+  if (permissions.projects.read) tabs.push('projects');
+  if (permissions.wbs.read) tabs.push('wbs');
+  if (permissions.activities.read) tabs.push('activities');
+  if (permissions.catalogs.read) tabs.push('catalogs');
+  if (permissions.audit.read) tabs.push('audit');
+  return tabs;
 }
 
 function AuthenticatedApp({ user, onLogout }) {
+  const { can, canAny, isAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState('projects');
-  const { projects, activeProjectId, setActiveProjectId, reloadProjects } = useProjects();
+  const {
+    projects,
+    activeProjectId,
+    setActiveProjectId,
+    reloadProjects,
+    loading: projectsLoading,
+    error: projectsError,
+  } = useProjects();
+
+  const permissions = useMemo(
+    () => ({
+      isAdmin,
+      projects: {
+        read: can('projects.read'),
+        create: can('projects.create'),
+        update: can('projects.update'),
+        delete: can('projects.delete'),
+      },
+      wbs: {
+        read: can('wbs.read'),
+        create: can('wbs.create'),
+        update: can('wbs.update'),
+        reorder: can('wbs.reorder'),
+        delete: can('wbs.delete'),
+      },
+      activities: {
+        read: can('activities.read'),
+        create: can('activities.create'),
+        update: can('activities.update'),
+        reorder: can('activities.reorder'),
+        delete: can('activities.delete'),
+      },
+      baselines: {
+        read: can('baselines.read'),
+        create: can('baselines.create'),
+        delete: can('baselines.delete'),
+      },
+      catalogs: {
+        read: canAny('catalogs.read', 'catalogs.manage'),
+        manage: can('catalogs.manage'),
+      },
+      audit: {
+        read: can('audit.read'),
+      },
+    }),
+    [can, canAny, isAdmin]
+  );
 
   const activeProject = useMemo(() => {
     return projects.find((item) => item.id === activeProjectId) || null;
   }, [projects, activeProjectId]);
 
-  const canViewAudit = hasAccess(user, 'audit.read');
-  const canViewCatalogs = hasAccess(user, 'catalogs.read') || hasAccess(user, 'catalogs.write');
-  const canWriteCatalogs = hasAccess(user, 'catalogs.write');
+  const operationalLock = useMemo(() => {
+    if (!activeProject) return false;
+    if (permissions.isAdmin) return false;
+    return String(activeProject.status_code || activeProject.status || 'active').trim().toLowerCase() !== 'active';
+  }, [activeProject, permissions.isAdmin]);
 
-  const { tree, reloadWBS } = useWBS(activeProjectId);
-  const { activities, reloadActivities } = useActivities(activeProjectId);
+  const visibleTabs = useMemo(() => getVisibleTabs(permissions), [permissions]);
 
-  async function handleProjectChanged(projectId) {
+  const {
+    tree,
+    reloadWBS,
+    loading: wbsLoading,
+    error: wbsError,
+  } = useWBS(activeProjectId);
+  const {
+    activities,
+    reloadActivities,
+    loading: activitiesLoading,
+    error: activitiesError,
+  } = useActivities(activeProjectId);
+
+  useEffect(() => {
+    if (!visibleTabs.includes(activeTab)) {
+      setActiveTab(visibleTabs[0] || 'projects');
+    }
+  }, [activeTab, visibleTabs]);
+
+  const handleProjectChanged = useCallback(async (projectId) => {
     setActiveProjectId(projectId);
-    await reloadWBS(projectId);
-    await reloadActivities(projectId);
-  }
+    await Promise.allSettled([reloadWBS(projectId), reloadActivities(projectId)]);
+  }, [reloadWBS, reloadActivities, setActiveProjectId]);
 
-  async function handleProjectListChanged(preferredProjectId) {
+  const handleProjectListChanged = useCallback(async (preferredProjectId) => {
     await reloadProjects(preferredProjectId);
-  }
+  }, [reloadProjects]);
 
-  async function handleWbsChanged() {
-    await reloadWBS(activeProjectId);
-    await reloadActivities(activeProjectId);
-  }
+  const handleWbsChanged = useCallback(async () => {
+    if (!activeProjectId) return;
+    await Promise.allSettled([reloadWBS(activeProjectId), reloadActivities(activeProjectId)]);
+  }, [activeProjectId, reloadWBS, reloadActivities]);
 
-  async function handleActivitiesChanged() {
-    await reloadActivities(activeProjectId);
-  }
+  const handleActivitiesChanged = useCallback(async () => {
+    if (!activeProjectId) return [];
+    return reloadActivities(activeProjectId);
+  }, [activeProjectId, reloadActivities]);
 
   return (
     <AppShell user={user} onLogout={onLogout}>
       <div className="mb-6 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Proyecto activo</div>
-          <div className="text-lg font-semibold text-slate-900">{activeProject ? activeProject.name : 'Ninguno'}</div>
+          <div className="text-lg font-semibold text-slate-900">
+            {activeProject ? activeProject.name : projectsLoading ? 'Cargando...' : 'Ninguno'}
+          </div>
           <div className="text-sm text-slate-600">
             {activeProject ? activeProject.description || 'Sin descripción' : 'Selecciona un proyecto'}
           </div>
+          {activeProject ? (
+            <div className="mt-1 text-xs uppercase tracking-wide text-slate-500">
+              Estado: {activeProject.status_name || activeProject.status_code || activeProject.status}
+            </div>
+          ) : null}
         </div>
-        <Tabs
-          activeTab={activeTab}
-          onChange={setActiveTab}
-          canViewAudit={canViewAudit}
-          canViewCatalogs={canViewCatalogs}
-        />
+        <Tabs activeTab={activeTab} onChange={setActiveTab} visibleTabs={visibleTabs} />
       </div>
 
-      {activeTab === 'projects' ? (
+      {projectsError ? (
+        <InlineAlert tone="warning" className="mb-4">
+          {projectsError}
+        </InlineAlert>
+      ) : null}
+
+      {activeTab === 'projects' && permissions.projects.read ? (
         <ProjectsPage
           projects={projects}
           activeProjectId={activeProjectId}
           onProjectSelect={handleProjectChanged}
           reloadProjects={handleProjectListChanged}
+          loading={projectsLoading}
+          error={projectsError}
+          canCreate={permissions.projects.create}
+          canUpdate={permissions.projects.update}
+          canDelete={permissions.projects.delete}
+          canCreateBaseline={permissions.baselines.create}
+          canDeleteBaseline={permissions.baselines.delete}
+          canOverrideOperationalLock={permissions.isAdmin}
         />
       ) : null}
 
-      {activeTab === 'wbs' ? (
-        <WBSPage activeProject={activeProject} tree={tree} reloadWBS={handleWbsChanged} />
+      {activeTab === 'wbs' && permissions.wbs.read ? (
+        <WBSPage
+          activeProject={activeProject}
+          tree={tree}
+          reloadWBS={handleWbsChanged}
+          loading={wbsLoading}
+          error={wbsError}
+          canCreate={permissions.wbs.create}
+          canUpdate={permissions.wbs.update}
+          canDelete={permissions.wbs.delete}
+          canReorder={permissions.wbs.reorder}
+          operationallyLocked={operationalLock}
+        />
       ) : null}
 
-      {activeTab === 'activities' ? (
+      {activeTab === 'activities' && permissions.activities.read ? (
         <ActivitiesPage
           activeProject={activeProject}
           tree={tree}
           activities={activities}
           reloadActivities={handleActivitiesChanged}
+          loading={activitiesLoading}
+          error={activitiesError}
+          canCreate={permissions.activities.create}
+          canUpdate={permissions.activities.update}
+          canDelete={permissions.activities.delete}
+          canReorder={permissions.activities.reorder}
+          canCreateBaseline={permissions.baselines.read}
+          operationallyLocked={operationalLock}
         />
       ) : null}
 
-      {activeTab === 'catalogs' && canViewCatalogs ? (
-        <CatalogsPage canWrite={canWriteCatalogs} />
+      {activeTab === 'catalogs' && permissions.catalogs.read ? (
+        <CatalogsPage canWrite={permissions.catalogs.manage} />
       ) : null}
-
-      {activeTab === 'audit' && canViewAudit ? <AuditPage activeProject={activeProject} /> : null}
+      {activeTab === 'audit' && permissions.audit.read ? <AuditPage activeProject={activeProject} /> : null}
     </AppShell>
   );
 }

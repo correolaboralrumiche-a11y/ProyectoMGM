@@ -1,13 +1,18 @@
 import app from './app.js';
+import { env } from './config/env.js';
 import { closePool } from './config/db.js';
+import { logger } from './utils/logger.js';
 
-const PORT = process.env.PORT || 4000;
-const server = app.listen(PORT, () => {
-  console.log(`API running on http://localhost:${PORT}`);
+const server = app.listen(env.port, () => {
+  logger.info('API server started', {
+    port: env.port,
+    environment: env.nodeEnv,
+  });
+  console.log(`API running on http://localhost:${env.port}`);
 });
 
 server.on('error', (error) => {
-  console.error('Server startup error:', error);
+  logger.error('Server startup error', error);
   process.exit(1);
 });
 
@@ -17,20 +22,21 @@ async function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
 
-  console.log(`${signal} received. Shutting down gracefully...`);
+  logger.info('Shutdown signal received', { signal });
 
   server.close(async () => {
     try {
       await closePool();
+      logger.info('HTTP server and PostgreSQL pool closed');
       process.exit(0);
     } catch (error) {
-      console.error('Error while closing PostgreSQL pool:', error);
+      logger.error('Error while closing PostgreSQL pool', error);
       process.exit(1);
     }
   });
 
   setTimeout(() => {
-    console.error('Forced shutdown after timeout');
+    logger.error('Forced shutdown after timeout');
     process.exit(1);
   }, 10000).unref();
 }

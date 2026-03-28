@@ -138,8 +138,24 @@ function getVisibleColumns(columnSettings) {
   return [COLUMN_MAP.get('code'), COLUMN_MAP.get('name'), ...middleColumns];
 }
 
+function normalizeDateValue(value) {
+  if (value === null || value === undefined || value === '') return null;
+
+  const normalized = String(value).trim();
+  if (!normalized) return null;
+
+  const match = normalized.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : normalized;
+}
+
 function formatDate(value) {
-  return value || '—';
+  const normalized = normalizeDateValue(value);
+  if (!normalized) return '—';
+
+  const [year, month, day] = normalized.split('-');
+  if (!year || !month || !day) return normalized;
+
+  return `${day}/${month}/${year}`;
 }
 
 function formatNumber(value, digits = 2) {
@@ -620,7 +636,7 @@ export default function DataTable({
     if (column.key === 'start_date' || column.key === 'end_date') {
       return (
         <EditableCell
-          value={row[column.key] || ''}
+          value={normalizeDateValue(row[column.key]) || ''}
           className={baseCellClass}
           type="date"
           {...commonProps}

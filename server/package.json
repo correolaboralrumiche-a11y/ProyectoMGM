@@ -2,11 +2,17 @@
   "name": "proyectomgm-server",
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "db:migrate": "knex migrate:latest --env development",
-    "db:rollback": "knex migrate:rollback --env development"
+    "db:rollback": "knex migrate:rollback --env development",
+    "db:seed": "node ./scripts/seed-platform.js",
+    "platform:verify": "node ./scripts/verify-platform.js",
+    "test": "node --test ./tests/**/*.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

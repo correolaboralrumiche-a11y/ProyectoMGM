@@ -1,12 +1,7 @@
-const DEFAULT_SESSION_HOURS = 12;
-
-function parseNumber(value, fallback) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
+import { env } from './env.js';
 
 export const securityConfig = {
-  sessionHours: parseNumber(process.env.AUTH_SESSION_HOURS, DEFAULT_SESSION_HOURS),
+  sessionHours: env.authSessionHours,
 };
 
 export default securityConfig;

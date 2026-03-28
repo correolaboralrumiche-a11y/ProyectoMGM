@@ -25,7 +25,7 @@ router.get('/:catalogKey', requirePermission('catalogs.read'), async (req, res, 
   }
 });
 
-router.post('/:catalogKey', requirePermission('catalogs.write'), async (req, res, next) => {
+router.post('/:catalogKey', requirePermission('catalogs.manage'), async (req, res, next) => {
   try {
     return ok(
       res,
@@ -42,7 +42,7 @@ router.post('/:catalogKey', requirePermission('catalogs.write'), async (req, res
   }
 });
 
-router.put('/:catalogKey/:code', requirePermission('catalogs.write'), async (req, res, next) => {
+router.put('/:catalogKey/:code', requirePermission('catalogs.manage'), async (req, res, next) => {
   try {
     return ok(
       res,

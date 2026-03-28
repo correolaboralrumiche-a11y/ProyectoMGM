@@ -14,6 +14,14 @@ router.get('/', requirePermission('activities.read'), async (req, res, next) => 
   }
 });
 
+router.get('/:id/control-data', requirePermission('activities.read'), async (req, res, next) => {
+  try {
+    return ok(res, await activitiesService.getActivityControlData(req.params.id));
+  } catch (error) {
+    return next(error);
+  }
+});
+
 router.post('/', requirePermission('activities.write'), async (req, res, next) => {
   try {
     return ok(res, await activitiesService.createActivity(req.body, req.auth, buildRequestAuditContext(req)), 201);
@@ -27,6 +35,40 @@ router.put('/:id', requirePermission('activities.write'), async (req, res, next)
     return ok(
       res,
       await activitiesService.updateActivity(req.params.id, req.body, req.auth, buildRequestAuditContext(req))
+    );
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/:id/progress-updates', requirePermission('activities.write'), async (req, res, next) => {
+  try {
+    return ok(
+      res,
+      await activitiesService.createProgressUpdate(
+        req.params.id,
+        req.body,
+        req.auth,
+        buildRequestAuditContext(req)
+      ),
+      201
+    );
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/:id/actuals', requirePermission('activities.write'), async (req, res, next) => {
+  try {
+    return ok(
+      res,
+      await activitiesService.createActualEntry(
+        req.params.id,
+        req.body,
+        req.auth,
+        buildRequestAuditContext(req)
+      ),
+      201
     );
   } catch (error) {
     return next(error);

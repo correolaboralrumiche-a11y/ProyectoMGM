@@ -3,6 +3,7 @@ import { withTransaction } from '../../config/db.js';
 import { baselinesRepository } from './baselines.repository.js';
 import { auditRepository } from '../audit/audit.repository.js';
 import { extractActorId } from '../../utils/audit.js';
+import { ensureProjectOperationallyEditable } from '../../utils/projectOperationalControl.js';
 
 function baselineAuditSnapshot(baseline) {
   return {
@@ -62,6 +63,7 @@ export const baselinesService = {
     if (!project) {
       throw new AppError('Project not found', 404);
     }
+    ensureProjectOperationallyEditable(project, actor, 'baseline creation');
 
     const baselineName = await normalizeBaselineName(payload?.name, projectId);
     const existing = await baselinesRepository.findBaselineByProjectAndName(projectId, baselineName);
@@ -188,6 +190,9 @@ export const baselinesService = {
     if (!baseline) {
       throw new AppError('Baseline not found', 404);
     }
+
+    const project = await baselinesRepository.findProjectById(baseline.project_id);
+    ensureProjectOperationallyEditable(project, actor, 'baseline deletion');
 
     const actorId = extractActorId(actor);
 

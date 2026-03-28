@@ -1,18 +1,23 @@
-import { useCallback, useEffect, useState } from 'react';
-import { projectsApi } from '../services/projectsApi';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { projectsApi } from '../services/projectsApi.js';
+import { getErrorMessage } from '../utils/error.js';
 
 const STORAGE_KEY = 'mgm.activeProjectId';
 
+function readStoredProjectId() {
+  try {
+    return localStorage.getItem(STORAGE_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
 export function useProjects() {
   const [projects, setProjects] = useState([]);
-  const [activeProjectId, setActiveProjectIdState] = useState(() => {
-    try {
-      return localStorage.getItem(STORAGE_KEY) || '';
-    } catch {
-      return '';
-    }
-  });
+  const [activeProjectId, setActiveProjectIdState] = useState(() => readStoredProjectId());
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const requestRef = useRef(0);
 
   const setActiveProjectId = useCallback((projectId) => {
     const nextId = projectId || '';
@@ -31,32 +36,43 @@ export function useProjects() {
 
   const loadProjects = useCallback(
     async (preferredProjectId = null) => {
+      const requestId = ++requestRef.current;
       setLoading(true);
+      setError('');
 
       try {
         const data = await projectsApi.list();
-        setProjects(data);
+        if (requestRef.current !== requestId) return [];
 
-        const preferred =
-          preferredProjectId !== null ? preferredProjectId : activeProjectId;
+        const normalized = Array.isArray(data) ? data : [];
+        setProjects(normalized);
 
-        if (data.length === 0) {
+        const preferred = preferredProjectId !== null ? preferredProjectId : activeProjectId;
+
+        if (!normalized.length) {
           setActiveProjectId('');
-          return data;
+          return normalized;
         }
 
-        if (preferred && data.some((p) => p.id === preferred)) {
+        if (preferred && normalized.some((item) => item.id === preferred)) {
           if (preferred !== activeProjectId) {
             setActiveProjectId(preferred);
           }
-          return data;
+          return normalized;
         }
 
-        const fallbackId = data[0]?.id || '';
+        const fallbackId = normalized[0]?.id || '';
         setActiveProjectId(fallbackId);
-        return data;
+        return normalized;
+      } catch (err) {
+        if (requestRef.current === requestId) {
+          setError(getErrorMessage(err, 'No se pudieron cargar los proyectos.'));
+        }
+        return [];
       } finally {
-        setLoading(false);
+        if (requestRef.current === requestId) {
+          setLoading(false);
+        }
       }
     },
     [activeProjectId, setActiveProjectId]
@@ -71,6 +87,7 @@ export function useProjects() {
     activeProjectId,
     setActiveProjectId,
     loading,
+    error,
     reloadProjects: loadProjects,
   };
 }

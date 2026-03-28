@@ -2,6 +2,7 @@ import { AppError } from '../../errors/AppError.js';
 import { wbsRepository } from './wbs.repository.js';
 import { auditRepository } from '../audit/audit.repository.js';
 import { extractActorId } from '../../utils/audit.js';
+import { ensureProjectOperationallyEditable } from '../../utils/projectOperationalControl.js';
 
 function normalizeRequiredText(value, fieldLabel) {
   const normalized = String(value || '').trim();
@@ -174,7 +175,8 @@ export const wbsService = {
     const actorId = extractActorId(actor);
 
     return wbsRepository.transaction(async (client) => {
-      await ensureProjectExists(projectId, client);
+      const project = await ensureProjectExists(projectId, client);
+      ensureProjectOperationallyEditable(project, actor, 'WBS changes');
       await ensureValidParentAssignment(projectId, null, parentId, client);
 
       const node = await wbsRepository.create(
@@ -218,6 +220,8 @@ export const wbsService = {
 
     return wbsRepository.transaction(async (client) => {
       const existing = await ensureNodeExists(normalizedNodeId, client);
+      const project = await ensureProjectExists(existing.project_id, client);
+      ensureProjectOperationallyEditable(project, actor, 'WBS changes');
       const beforeSnapshot = wbsAuditSnapshot(existing);
       const name = normalizeRequiredText(payload?.name ?? existing.name, 'WBS name');
       const parentId = Object.prototype.hasOwnProperty.call(payload || {}, 'parent_id')
@@ -271,6 +275,8 @@ export const wbsService = {
 
     return wbsRepository.transaction(async (client) => {
       const node = await ensureNodeExists(normalizedNodeId, client);
+      const project = await ensureProjectExists(node.project_id, client);
+      ensureProjectOperationallyEditable(project, actor, 'WBS reordering');
       const beforeSnapshot = wbsAuditSnapshot(node);
       const siblings = await wbsRepository.listChildren(node.project_id, node.parent_id, client);
       const currentIndex = siblings.findIndex((item) => item.id === node.id);
@@ -318,6 +324,8 @@ export const wbsService = {
 
     return wbsRepository.transaction(async (client) => {
       const node = await ensureNodeExists(normalizedNodeId, client);
+      const project = await ensureProjectExists(node.project_id, client);
+      ensureProjectOperationallyEditable(project, actor, 'WBS reordering');
       const beforeSnapshot = wbsAuditSnapshot(node);
 
       if (!node.parent_id) {
@@ -371,6 +379,8 @@ export const wbsService = {
 
     return wbsRepository.transaction(async (client) => {
       const node = await ensureNodeExists(normalizedNodeId, client);
+      const project = await ensureProjectExists(node.project_id, client);
+      ensureProjectOperationallyEditable(project, actor, 'WBS reordering');
       const beforeSnapshot = wbsAuditSnapshot(node);
       const siblings = await wbsRepository.listChildren(node.project_id, node.parent_id, client);
       const currentIndex = siblings.findIndex((item) => item.id === node.id);
@@ -423,6 +433,8 @@ export const wbsService = {
 
     return wbsRepository.transaction(async (client) => {
       const node = await ensureNodeExists(normalizedNodeId, client);
+      const project = await ensureProjectExists(node.project_id, client);
+      ensureProjectOperationallyEditable(project, actor, 'WBS deletion');
       const beforeSnapshot = wbsAuditSnapshot(node);
       await auditRepository.create(
         {

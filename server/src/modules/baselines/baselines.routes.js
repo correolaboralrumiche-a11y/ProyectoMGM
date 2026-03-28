@@ -14,7 +14,7 @@ router.get('/', requirePermission('baselines.read'), async (req, res, next) => {
   }
 });
 
-router.post('/', requirePermission('baselines.write'), async (req, res, next) => {
+router.post('/', requirePermission('baselines.create'), async (req, res, next) => {
   try {
     return ok(res, await baselinesService.createBaseline(req.body, req.auth, buildRequestAuditContext(req)), 201);
   } catch (error) {

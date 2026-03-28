@@ -1,1 +1,9 @@
-Reemplaza los archivos y ejecuta npx.cmd knex migrate:latest --env development en server. Reinicia backend y frontend.
+Reemplaza estos archivos en tu proyecto:
+- server/src/utils/date.js
+- server/src/modules/activities/activities.repository.js
+- client/src/pages/ActivitiesPage.jsx
+- client/src/components/activities/DataTable.jsx
+- client/src/components/activities/ActivityControlPanel.jsx
+
+Luego reinicia backend y frontend.
+No requiere migraciones.

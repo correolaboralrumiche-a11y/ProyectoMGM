@@ -1,5 +1,19 @@
 import { pool } from '../../config/db.js';
 
+function normalizeDateValue(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    return value.toISOString().slice(0, 10);
+  }
+
+  const normalized = String(value).trim();
+  if (!normalized) return null;
+
+  const match = normalized.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : normalized;
+}
+
 function mapActivity(row) {
   if (!row) return null;
 
@@ -9,8 +23,8 @@ function mapActivity(row) {
     wbs_id: row.wbs_id,
     activity_id: row.activity_id,
     name: row.name,
-    start_date: row.start_date || null,
-    end_date: row.end_date || row.finish_date || null,
+    start_date: normalizeDateValue(row.start_date),
+    end_date: normalizeDateValue(row.end_date || row.finish_date),
     duration: Number(row.duration ?? row.duration_days ?? 0),
     progress: Number(row.progress ?? row.progress_percent ?? 0),
     hours: Number(row.hours ?? row.budget_hours ?? 0),

@@ -29,6 +29,10 @@ function normalizeOptionalText(value) {
   return String(value || '').trim();
 }
 
+function getTodayDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function activityAuditSnapshot(activity) {
   return {
     id: activity.id,
@@ -40,8 +44,14 @@ function activityAuditSnapshot(activity) {
     end_date: activity.end_date || null,
     duration: Number(activity.duration || 0),
     progress: Number(activity.progress || 0),
-    hours: Number(activity.hours || 0),
-    cost: Number(activity.cost || 0),
+    budget_hours: Number(activity.budget_hours ?? activity.hours ?? 0),
+    budget_cost: Number(activity.budget_cost ?? activity.cost ?? 0),
+    actual_hours: Number(activity.actual_hours || 0),
+    actual_cost: Number(activity.actual_cost || 0),
+    remaining_hours: Number(activity.remaining_hours || 0),
+    remaining_cost: Number(activity.remaining_cost || 0),
+    latest_progress_date: activity.latest_progress_date || null,
+    latest_actual_date: activity.latest_actual_date || null,
     status_code: activity.status_code,
     status_name: activity.status_name || activity.status,
     activity_type_code: activity.activity_type_code,
@@ -205,8 +215,14 @@ async function buildNormalizedActivity(payload, existing, wbs, actorId, executor
     start_date: startDate,
     end_date: endDate,
     progress: normalizeNumber(payload?.progress ?? existing?.progress, existing?.progress ?? 0),
-    hours: normalizeNumber(payload?.hours ?? existing?.hours, existing?.hours ?? 0),
-    cost: normalizeNumber(payload?.cost ?? existing?.cost, existing?.cost ?? 0),
+    hours: normalizeNumber(
+      payload?.budget_hours ?? payload?.hours ?? existing?.budget_hours ?? existing?.hours,
+      existing?.budget_hours ?? existing?.hours ?? 0
+    ),
+    cost: normalizeNumber(
+      payload?.budget_cost ?? payload?.cost ?? existing?.budget_cost ?? existing?.cost,
+      existing?.budget_cost ?? existing?.cost ?? 0
+    ),
     status_code,
     activity_type_code,
     priority_code,
@@ -226,6 +242,59 @@ async function buildNormalizedActivity(payload, existing, wbs, actorId, executor
   return normalized;
 }
 
+function deriveStatusCodeFromProgress(progress) {
+  const normalizedProgress = normalizeNumber(progress, 0);
+  if (normalizedProgress >= 100) return 'completed';
+  if (normalizedProgress <= 0) return 'not_started';
+  return 'in_progress';
+}
+
+function normalizeRequiredDate(value, fallback = getTodayDate()) {
+  const trimmed = normalizeText(value);
+  if (!trimmed) {
+    return fallback;
+  }
+
+  const normalized = normalizeOptionalDate(trimmed);
+  if (!normalized) {
+    throw new AppError('Invalid date', 400);
+  }
+
+  return normalized;
+}
+
+function normalizeProgressValue(value, fallback) {
+  const parsed = normalizeNumber(value, fallback);
+  if (parsed < 0 || parsed > 100) {
+    throw new AppError('Progress must be between 0 and 100', 400);
+  }
+  return parsed;
+}
+
+function normalizeNonNegative(value, label) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new AppError(`${label} must be greater than or equal to 0`, 400);
+  }
+  return parsed;
+}
+
+function buildControlSummary(activity) {
+  return {
+    budget_hours: Number(activity.budget_hours ?? activity.hours ?? 0),
+    budget_cost: Number(activity.budget_cost ?? activity.cost ?? 0),
+    actual_hours: Number(activity.actual_hours ?? 0),
+    actual_cost: Number(activity.actual_cost ?? 0),
+    remaining_hours: Number(activity.remaining_hours ?? 0),
+    remaining_cost: Number(activity.remaining_cost ?? 0),
+    current_progress: Number(activity.progress ?? 0),
+    latest_progress_date: activity.latest_progress_date || null,
+    latest_actual_date: activity.latest_actual_date || null,
+    progress_update_count: Number(activity.progress_update_count ?? 0),
+    actual_entry_count: Number(activity.actual_entry_count ?? 0),
+  };
+}
+
 export const activitiesService = {
   async listActivities(projectId) {
     const normalizedProjectId = normalizeText(projectId);
@@ -235,6 +304,27 @@ export const activitiesService = {
     }
 
     return activitiesRepository.listByProject(normalizedProjectId);
+  },
+
+  async getActivityControlData(activityId) {
+    const normalizedActivityId = normalizeText(activityId);
+
+    if (!normalizedActivityId) {
+      throw new AppError('Activity ID is required', 400);
+    }
+
+    const activity = await ensureActivityExists(normalizedActivityId);
+    const [progress_updates, actual_entries] = await Promise.all([
+      activitiesRepository.listProgressUpdates(activity.id),
+      activitiesRepository.listActualEntries(activity.id),
+    ]);
+
+    return {
+      activity,
+      summary: buildControlSummary(activity),
+      progress_updates,
+      actual_entries,
+    };
   },
 
   async createActivity(payload, actor, requestContext = {}) {
@@ -347,6 +437,152 @@ export const activitiesService = {
       );
 
       return persisted;
+    });
+  },
+
+  async createProgressUpdate(activityId, payload, actor, requestContext = {}) {
+    const normalizedActivityId = normalizeText(activityId);
+    const actorId = extractActorId(actor);
+
+    return withTransaction(async (client) => {
+      const existing = await ensureActivityExists(normalizedActivityId, client);
+      const progress = normalizeProgressValue(
+        payload?.progress_percent ?? payload?.progress,
+        existing.progress ?? 0
+      );
+      const update_date = normalizeRequiredDate(payload?.update_date);
+      const status_code = await resolveCatalogCode(
+        'activity-statuses',
+        payload?.status_code ?? payload?.status ?? deriveStatusCodeFromProgress(progress),
+        deriveStatusCodeFromProgress(progress),
+        client,
+        { legacyStatusMap: LEGACY_STATUS_CODE_MAP, label: 'activity status' }
+      );
+      const notes = normalizeOptionalText(payload?.notes);
+
+      const entry = await activitiesRepository.insertProgressUpdate(
+        {
+          activity_id: existing.id,
+          project_id: existing.project_id,
+          update_date,
+          progress_percent: progress,
+          status_code,
+          notes,
+          created_by: actorId,
+          source_type: 'manual',
+        },
+        client
+      );
+
+      await activitiesRepository.updateProgressSummary(
+        existing.id,
+        {
+          progress,
+          status_code,
+          updated_by: actorId,
+        },
+        client
+      );
+
+      const refreshed = await activitiesRepository.findById(existing.id, client);
+
+      await auditRepository.create(
+        {
+          actor_user_id: actorId,
+          entity_type: 'activity',
+          entity_id: existing.id,
+          project_id: existing.project_id,
+          action: 'progress_update',
+          summary: `Progress update recorded for ${existing.activity_id}: ${progress}%`,
+          before_data: { progress: existing.progress, status_code: existing.status_code },
+          after_data: {
+            progress: refreshed.progress,
+            status_code: refreshed.status_code,
+            latest_progress_date: refreshed.latest_progress_date,
+          },
+          metadata: {
+            progress_update_id: entry.id,
+            update_date: entry.update_date,
+          },
+          ...requestContext,
+        },
+        client
+      );
+
+      return {
+        entry,
+        activity: refreshed,
+        summary: buildControlSummary(refreshed),
+      };
+    });
+  },
+
+  async createActualEntry(activityId, payload, actor, requestContext = {}) {
+    const normalizedActivityId = normalizeText(activityId);
+    const actorId = extractActorId(actor);
+
+    return withTransaction(async (client) => {
+      const existing = await ensureActivityExists(normalizedActivityId, client);
+      const actual_date = normalizeRequiredDate(payload?.actual_date);
+      const actual_hours = normalizeNonNegative(payload?.actual_hours ?? payload?.hours ?? 0, 'Actual hours');
+      const actual_cost = normalizeNonNegative(payload?.actual_cost ?? payload?.cost ?? 0, 'Actual cost');
+      const notes = normalizeOptionalText(payload?.notes);
+
+      if (actual_hours <= 0 && actual_cost <= 0) {
+        throw new AppError('You must register actual hours or actual cost', 400);
+      }
+
+      const entry = await activitiesRepository.insertActualEntry(
+        {
+          activity_id: existing.id,
+          project_id: existing.project_id,
+          actual_date,
+          actual_hours,
+          actual_cost,
+          notes,
+          created_by: actorId,
+          source_type: 'manual',
+        },
+        client
+      );
+
+      await activitiesRepository.touchActivity(existing.id, actorId, client);
+      const refreshed = await activitiesRepository.findById(existing.id, client);
+
+      await auditRepository.create(
+        {
+          actor_user_id: actorId,
+          entity_type: 'activity',
+          entity_id: existing.id,
+          project_id: existing.project_id,
+          action: 'actual_entry',
+          summary: `Actual entry recorded for ${existing.activity_id}`,
+          before_data: {
+            actual_hours: existing.actual_hours,
+            actual_cost: existing.actual_cost,
+            latest_actual_date: existing.latest_actual_date,
+          },
+          after_data: {
+            actual_hours: refreshed.actual_hours,
+            actual_cost: refreshed.actual_cost,
+            latest_actual_date: refreshed.latest_actual_date,
+          },
+          metadata: {
+            actual_entry_id: entry.id,
+            actual_date: entry.actual_date,
+            actual_hours: entry.actual_hours,
+            actual_cost: entry.actual_cost,
+          },
+          ...requestContext,
+        },
+        client
+      );
+
+      return {
+        entry,
+        activity: refreshed,
+        summary: buildControlSummary(refreshed),
+      };
     });
   },
 

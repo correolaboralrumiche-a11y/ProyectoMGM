@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:4000';
+const API_URL = (import.meta.env?.VITE_API_URL || 'http://localhost:4000').replace(/\/$/, '');
 const AUTH_TOKEN_KEY = 'proyectomgm_auth_token';
 let unauthorizedHandler = null;
 
@@ -17,6 +17,17 @@ export const authStorage = {
 
 export function setUnauthorizedHandler(handler) {
   unauthorizedHandler = typeof handler === 'function' ? handler : null;
+}
+
+function buildErrorFromResponse(response, json) {
+  const detailText = Array.isArray(json?.details?.allowed_statuses)
+    ? ` Valores permitidos: ${json.details.allowed_statuses.map((item) => item.name || item.code).join(', ')}.`
+    : '';
+
+  const error = new Error((json?.error || 'Request failed') + detailText);
+  error.status = response.status;
+  error.details = json?.details || null;
+  return error;
 }
 
 async function request(path, options = {}) {
@@ -52,8 +63,7 @@ async function request(path, options = {}) {
   }
 
   if (!response.ok || json?.success === false) {
-    const error = new Error(json?.error || 'Request failed');
-    error.status = response.status;
+    const error = buildErrorFromResponse(response, json || {});
 
     if (response.status === 401 && !skipAuth) {
       authStorage.clearToken();
