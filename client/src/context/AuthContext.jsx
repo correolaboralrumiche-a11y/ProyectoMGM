@@ -28,6 +28,7 @@ export function AuthProvider({ children }) {
 
     async function bootstrap() {
       const token = authStorage.getToken();
+
       if (!token) {
         if (!cancelled) {
           setLoading(false);
@@ -61,8 +62,9 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (identifier, password) => {
     const data = await authApi.login({ identifier, password });
-    setUser(data?.user || null);
-    return data?.user || null;
+    const nextUser = data?.user || null;
+    setUser(nextUser);
+    return nextUser;
   }, []);
 
   const logout = useCallback(async () => {
@@ -75,11 +77,12 @@ export function AuthProvider({ children }) {
 
   const rolesSet = useMemo(
     () => new Set((user?.roles || []).map(normalizeCode).filter(Boolean)),
-    [user]
+    [user],
   );
+
   const permissionsSet = useMemo(
     () => new Set((user?.permissions || []).map(normalizeCode).filter(Boolean)),
-    [user]
+    [user],
   );
 
   const hasRole = useCallback(
@@ -88,7 +91,7 @@ export function AuthProvider({ children }) {
       if (!expected) return false;
       return rolesSet.has(expected);
     },
-    [rolesSet]
+    [rolesSet],
   );
 
   const isAdmin = hasRole('admin');
@@ -100,17 +103,17 @@ export function AuthProvider({ children }) {
       if (isAdmin) return true;
       return permissionsSet.has(expected);
     },
-    [isAdmin, permissionsSet]
+    [isAdmin, permissionsSet],
   );
 
   const canAny = useCallback(
     (...permissionCodes) => permissionCodes.flat().some((code) => can(code)),
-    [can]
+    [can],
   );
 
   const canAll = useCallback(
     (...permissionCodes) => permissionCodes.flat().every((code) => can(code)),
-    [can]
+    [can],
   );
 
   const value = useMemo(
@@ -126,7 +129,7 @@ export function AuthProvider({ children }) {
       canAny,
       canAll,
     }),
-    [user, loading, isAdmin, login, logout, hasRole, can, canAny, canAll]
+    [user, loading, isAdmin, login, logout, hasRole, can, canAny, canAll],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -134,8 +137,10 @@ export function AuthProvider({ children }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
+
   if (!context) {
     throw new Error('useAuth must be used within AuthProvider');
   }
+
   return context;
 }

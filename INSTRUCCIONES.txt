@@ -1,9 +1,121 @@
-Reemplaza estos archivos en tu proyecto:
-- server/src/utils/date.js
-- server/src/modules/activities/activities.repository.js
-- client/src/pages/ActivitiesPage.jsx
-- client/src/components/activities/DataTable.jsx
-- client/src/components/activities/ActivityControlPanel.jsx
+INSTRUCCIONES DE ACTUALIZACIÓN — VERSIÓN ACTUAL
 
-Luego reinicia backend y frontend.
-No requiere migraciones.
+Esta versión ya incorpora los cambios acumulados más recientes del sistema:
+- separación en dos módulos
+- baseline funcional
+- EV básico por actividad
+- períodos financieros definidos por proyecto
+- snapshot financiero desde Actividades
+- control documentario
+- persistencia de columnas en Actividades
+
+----------------------------------------------------------------------
+1. SI YA REEMPLAZASTE LOS ARCHIVOS DE CÓDIGO
+----------------------------------------------------------------------
+
+Luego de copiar los archivos actualizados en tu proyecto:
+
+1. reinicia el backend
+2. reinicia el frontend
+
+Comandos sugeridos:
+
+Backend
+```bash
+cd server
+npm run dev
+```
+
+Frontend
+```bash
+cd client
+npm run dev
+```
+
+----------------------------------------------------------------------
+2. SI LA ENTREGA INCLUYE MIGRACIONES NUEVAS
+----------------------------------------------------------------------
+
+Ejecuta también:
+
+```bash
+cd server
+npx knex migrate:latest --env development
+npm run db:seed
+```
+
+Haz esto cuando la entrega incluya:
+- tablas nuevas
+- columnas nuevas
+- permisos nuevos
+- seeds actualizados
+
+----------------------------------------------------------------------
+3. FLUJO MÍNIMO DE PRUEBA RECOMENDADO
+----------------------------------------------------------------------
+
+### Módulo 1 — Control de Proyectos
+1. iniciar sesión
+2. entrar a Control de Proyectos
+3. crear o abrir un proyecto
+4. crear WBS
+5. crear actividades
+6. generar línea base
+7. ingresar avance en Actividades
+8. verificar que el EV se calcule contra el presupuesto base
+9. definir períodos financieros
+10. seleccionar un período financiero en Actividades
+11. guardar snapshot financiero desde Actividades
+
+### Módulo 2 — Control Documentario
+1. entrar a Control Documentario
+2. crear un entregable
+3. registrar una revisión
+4. registrar respuesta documental
+5. validar que se actualice el estado actual del entregable
+
+----------------------------------------------------------------------
+4. QUÉ REVISAR SI ALGO FALLA
+----------------------------------------------------------------------
+
+### Si falla la línea base
+- revisar consola del backend
+- verificar que las migraciones estén al día
+- verificar que existan actividades para snapshot
+- verificar que el proyecto activo sea correcto
+
+### Si falla EV
+- verificar que exista línea base del proyecto
+- verificar que la actividad tenga presupuesto base de costo
+- verificar que el porcentaje de avance sea válido
+
+### Si falla Período Financiero
+- verificar que el proyecto tenga períodos definidos
+- verificar que el período seleccionado aún no tenga snapshot
+- verificar que el backend esté reiniciado después de migraciones
+
+----------------------------------------------------------------------
+5. NOTA OPERATIVA
+----------------------------------------------------------------------
+
+La pestaña Actividades es ahora el punto principal para:
+- registrar avance
+- seleccionar período financiero
+- guardar snapshot financiero
+
+La pestaña de Períodos Financieros debe usarse principalmente para:
+- definir períodos
+- revisar histórico
+- consultar snapshots ya generados
+
+----------------------------------------------------------------------
+6. NOTA SOBRE README
+----------------------------------------------------------------------
+
+El archivo README.md ya fue actualizado para reflejar:
+- módulos actuales
+- baseline
+- EV
+- períodos financieros
+- control documentario
+- sprints recientes

@@ -9,8 +9,24 @@ import { catalogsApi } from '../services/catalogsApi.js';
 import { useBaselines } from '../hooks/useBaselines.js';
 import { getErrorMessage } from '../utils/error.js';
 
-const EMPTY_FORM = { name: '', description: '', status: 'active' };
-const EMPTY_BASELINE_FORM = { name: '', description: '' };
+const EMPTY_FORM = {
+  name: '',
+  description: '',
+  status: 'active',
+  priority_code: 'medium',
+  currency_code: 'USD',
+};
+
+const EMPTY_BASELINE_FORM = {
+  name: '',
+  description: '',
+};
+
+function resolveOperationalLock(project, canOverrideOperationalLock) {
+  if (!project) return false;
+  if (canOverrideOperationalLock) return false;
+  return String(project.status_code || project.status || 'active').trim().toLowerCase() !== 'active';
+}
 
 export default function ProjectsPage({
   projects,
@@ -32,25 +48,27 @@ export default function ProjectsPage({
   const [selectedBaselineId, setSelectedBaselineId] = useState('');
   const [creatingBaseline, setCreatingBaseline] = useState(false);
   const [savingProject, setSavingProject] = useState(false);
-  const [statusOptions, setStatusOptions] = useState([]);
+  const [catalogs, setCatalogs] = useState({
+    statuses: [],
+    priorities: [],
+    currencies: [],
+  });
   const [catalogError, setCatalogError] = useState('');
   const [pageError, setPageError] = useState('');
   const [pageSuccess, setPageSuccess] = useState('');
 
   const activeProject = useMemo(
     () => projects.find((project) => project.id === activeProjectId) || null,
-    [projects, activeProjectId]
+    [projects, activeProjectId],
   );
 
-  const operationallyLocked = useMemo(() => {
-    if (!activeProject) return false;
-    if (canOverrideOperationalLock) return false;
-    return String(activeProject.status_code || activeProject.status || 'active').trim().toLowerCase() !== 'active';
-  }, [activeProject, canOverrideOperationalLock]);
+  const operationallyLocked = useMemo(
+    () => resolveOperationalLock(activeProject, canOverrideOperationalLock),
+    [activeProject, canOverrideOperationalLock],
+  );
 
   const canManageProjectForm = editingId ? canUpdate : canCreate;
   const canCreateBaselineNow = Boolean(activeProjectId) && canCreateBaseline && !operationallyLocked;
-  const canDeleteBaselineNow = canDeleteBaseline && !operationallyLocked;
 
   const {
     baselines,
@@ -62,23 +80,30 @@ export default function ProjectsPage({
   useEffect(() => {
     let cancelled = false;
 
-    async function loadStatusCatalog() {
+    async function loadCatalogs() {
       try {
-        const response = await catalogsApi.get('project-statuses', { includeInactive: false });
+        const [statuses, priorities, currencies] = await Promise.all([
+          catalogsApi.get('project-statuses', { includeInactive: false }),
+          catalogsApi.get('project-priorities', { includeInactive: false }),
+          catalogsApi.get('currencies', { includeInactive: false }),
+        ]);
+
         if (!cancelled) {
-          setStatusOptions(Array.isArray(response?.items) ? response.items : []);
+          setCatalogs({
+            statuses: Array.isArray(statuses?.items) ? statuses.items : [],
+            priorities: Array.isArray(priorities?.items) ? priorities.items : [],
+            currencies: Array.isArray(currencies?.items) ? currencies.items : [],
+          });
           setCatalogError('');
         }
       } catch (err) {
         if (!cancelled) {
-          setStatusOptions([]);
-          setCatalogError(getErrorMessage(err, 'No se pudo cargar el catálogo de estados de proyecto.'));
+          setCatalogError(getErrorMessage(err, 'No se pudieron cargar los catálogos de proyecto.'));
         }
       }
     }
 
-    loadStatusCatalog();
-
+    loadCatalogs();
     return () => {
       cancelled = true;
     };
@@ -95,15 +120,27 @@ export default function ProjectsPage({
     }
   }, [baselines, selectedBaselineId]);
 
+  function clearFeedback() {
+    setPageError('');
+    setPageSuccess('');
+  }
+
   function resetForm() {
     setEditingId('');
     setForm(EMPTY_FORM);
   }
 
+  function handleFormChange(field, value) {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function handleBaselineFormChange(field, value) {
+    setBaselineForm((prev) => ({ ...prev, [field]: value }));
+  }
+
   async function handleSubmit(event) {
     event.preventDefault();
-    setPageError('');
-    setPageSuccess('');
+    clearFeedback();
 
     if (!canManageProjectForm) {
       setPageError(editingId ? 'No tienes permiso para actualizar proyectos.' : 'No tienes permiso para crear proyectos.');
@@ -116,22 +153,28 @@ export default function ProjectsPage({
     }
 
     setSavingProject(true);
+
     try {
+      const payload = {
+        name: form.name,
+        description: form.description,
+        status_code: form.status,
+        priority_code: form.priority_code,
+        currency_code: form.currency_code,
+      };
+
       if (editingId) {
-        await projectsApi.update(editingId, form);
+        await projectsApi.update(editingId, payload);
         await reloadProjects(editingId);
         setPageSuccess('Proyecto actualizado correctamente.');
       } else {
-        const created = await projectsApi.create(form);
+        const created = await projectsApi.create(payload);
         await reloadProjects(created?.id || null);
-        if (created?.id) {
-          await onProjectSelect(created.id);
-        }
+        if (created?.id) await onProjectSelect(created.id);
         setPageSuccess('Proyecto creado correctamente.');
       }
 
-      setForm(EMPTY_FORM);
-      setEditingId('');
+      resetForm();
     } catch (err) {
       setPageError(getErrorMessage(err, 'No se pudo guardar el proyecto.'));
     } finally {
@@ -145,11 +188,9 @@ export default function ProjectsPage({
       return;
     }
 
-    const confirmed = window.confirm(`¿Eliminar el proyecto "${project.name}"?`);
-    if (!confirmed) return;
+    if (!window.confirm(`¿Eliminar el proyecto "${project.name}"?`)) return;
 
-    setPageError('');
-    setPageSuccess('');
+    clearFeedback();
     setSavingProject(true);
 
     try {
@@ -157,9 +198,7 @@ export default function ProjectsPage({
       await projectsApi.remove(project.id);
       await reloadProjects(deletingActive ? null : activeProjectId);
       setPageSuccess('Proyecto eliminado correctamente.');
-      if (editingId === project.id) {
-        resetForm();
-      }
+      if (editingId === project.id) resetForm();
     } catch (err) {
       setPageError(getErrorMessage(err, 'No se pudo eliminar el proyecto.'));
     } finally {
@@ -178,9 +217,10 @@ export default function ProjectsPage({
       name: project.name || '',
       description: project.description || '',
       status: project.status_code || project.status || 'active',
+      priority_code: project.priority_code || 'medium',
+      currency_code: project.currency_code || 'USD',
     });
-    setPageError('');
-    setPageSuccess('');
+    clearFeedback();
   }
 
   async function handleSelectProject(projectId) {
@@ -190,8 +230,7 @@ export default function ProjectsPage({
 
   async function handleCreateBaseline(event) {
     event.preventDefault();
-    setPageError('');
-    setPageSuccess('');
+    clearFeedback();
 
     if (!activeProjectId) {
       setPageError('Selecciona un proyecto activo para generar una línea base.');
@@ -209,6 +248,7 @@ export default function ProjectsPage({
     }
 
     setCreatingBaseline(true);
+
     try {
       await baselinesApi.create({
         project_id: activeProjectId,
@@ -218,9 +258,7 @@ export default function ProjectsPage({
 
       setBaselineForm(EMPTY_BASELINE_FORM);
       const next = await reloadBaselines();
-      if (next[0]?.id) {
-        setSelectedBaselineId(next[0].id);
-      }
+      if (next[0]?.id) setSelectedBaselineId(next[0].id);
       setPageSuccess('Línea base creada correctamente.');
     } catch (err) {
       setPageError(getErrorMessage(err, 'No se pudo crear la línea base.'));
@@ -240,11 +278,9 @@ export default function ProjectsPage({
       return;
     }
 
-    const confirmed = window.confirm(`¿Eliminar la línea base "${baseline.name}"?`);
-    if (!confirmed) return;
+    if (!window.confirm(`¿Eliminar la línea base "${baseline.name}"?`)) return;
 
-    setPageError('');
-    setPageSuccess('');
+    clearFeedback();
     setCreatingBaseline(true);
 
     try {
@@ -261,21 +297,25 @@ export default function ProjectsPage({
     }
   }
 
+  const statusOptions = catalogs.statuses.length ? catalogs.statuses : [{ code: 'active', name: 'Activo' }];
+  const priorityOptions = catalogs.priorities.length ? catalogs.priorities : [{ code: 'medium', name: 'Media' }];
+  const currencyOptions = catalogs.currencies.length ? catalogs.currencies : [{ code: 'USD', name: 'US Dollar' }];
+
   return (
-    <div className="grid gap-4 lg:grid-cols-[380px,1fr]">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
       <div className="space-y-4">
-        <SectionCard title="Proyecto" subtitle="Crea o actualiza la cabecera principal del proyecto">
-          <div className="space-y-3">
-            {loading ? <InlineAlert tone="info">Cargando proyectos...</InlineAlert> : null}
+        <SectionCard
+          title={editingId ? 'Editar proyecto' : 'Nuevo proyecto'}
+          subtitle={activeProject ? `Proyecto activo: ${activeProject.name}` : 'Crea o selecciona un proyecto para comenzar'}
+        >
+          <div className="mb-3 space-y-3">
+            {loading ? <InlineAlert tone="info">Actualizando proyectos...</InlineAlert> : null}
             {error ? <InlineAlert tone="warning">{error}</InlineAlert> : null}
             {catalogError ? <InlineAlert tone="warning">{catalogError}</InlineAlert> : null}
             {pageError ? <InlineAlert tone="danger">{pageError}</InlineAlert> : null}
             {pageSuccess ? <InlineAlert tone="success">{pageSuccess}</InlineAlert> : null}
-            {!canCreate && !canUpdate ? (
-              <InlineAlert tone="info">Tu perfil tiene acceso de consulta sobre proyectos, pero no puede modificarlos.</InlineAlert>
-            ) : null}
             {operationallyLocked ? (
-              <InlineAlert tone="info">
+              <InlineAlert tone="warning">
                 El proyecto activo está en modo solo lectura operativa. WBS, actividades y líneas base quedan bloqueados para perfiles no administradores.
               </InlineAlert>
             ) : null}
@@ -286,34 +326,62 @@ export default function ProjectsPage({
               <label className="text-sm font-medium text-slate-700">Nombre</label>
               <input
                 value={form.name}
-                onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+                onChange={(event) => handleFormChange('name', event.target.value)}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                placeholder="Ej: Proyecto Mina Norte"
+                placeholder="Nombre del proyecto"
                 disabled={savingProject || !canManageProjectForm}
               />
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Estado</label>
-              <select
-                value={form.status}
-                onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value }))}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                disabled={savingProject || !canManageProjectForm}
-              >
-                {(statusOptions.length ? statusOptions : [{ code: 'active', name: 'Activo' }]).map((option) => (
-                  <option key={option.code} value={option.code}>
-                    {option.name}
-                  </option>
-                ))}
-              </select>
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Estado</label>
+                <select
+                  value={form.status}
+                  onChange={(event) => handleFormChange('status', event.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  disabled={savingProject || !canManageProjectForm}
+                >
+                  {statusOptions.map((option) => (
+                    <option key={option.code} value={option.code}>{option.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Prioridad</label>
+                <select
+                  value={form.priority_code}
+                  onChange={(event) => handleFormChange('priority_code', event.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  disabled={savingProject || !canManageProjectForm}
+                >
+                  {priorityOptions.map((option) => (
+                    <option key={option.code} value={option.code}>{option.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Moneda</label>
+                <select
+                  value={form.currency_code}
+                  onChange={(event) => handleFormChange('currency_code', event.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  disabled={savingProject || !canManageProjectForm}
+                >
+                  {currencyOptions.map((option) => (
+                    <option key={option.code} value={option.code}>{option.code} · {option.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">Descripción</label>
               <textarea
                 value={form.description}
-                onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
+                onChange={(event) => handleFormChange('description', event.target.value)}
                 className="min-h-28 w-full rounded-lg border border-slate-300 px-3 py-2"
                 placeholder="Descripción del proyecto"
                 disabled={savingProject || !canManageProjectForm}
@@ -322,19 +390,10 @@ export default function ProjectsPage({
 
             {(canCreate || canUpdate) ? (
               <div className="flex gap-2">
-                <button
-                  type="submit"
-                  disabled={savingProject || !canManageProjectForm}
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
+                <button type="submit" disabled={savingProject || !canManageProjectForm} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
                   {savingProject ? 'Guardando...' : editingId ? 'Guardar cambios' : 'Crear proyecto'}
                 </button>
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  disabled={savingProject}
-                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
-                >
+                <button type="button" onClick={resetForm} disabled={savingProject} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50">
                   Limpiar
                 </button>
               </div>
@@ -342,45 +401,39 @@ export default function ProjectsPage({
           </form>
         </SectionCard>
 
-        <SectionCard
-          title="Crear línea base"
-          subtitle={activeProject ? `Proyecto activo: ${activeProject.name}` : 'Selecciona un proyecto para generar una línea base'}
-        >
+        <SectionCard title="Crear línea base" subtitle={activeProject ? `Proyecto activo: ${activeProject.name}` : 'Selecciona un proyecto para generar una línea base'}>
           <form className="space-y-3" onSubmit={handleCreateBaseline}>
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">Nombre</label>
               <input
                 value={baselineForm.name}
-                onChange={(e) => setBaselineForm((prev) => ({ ...prev, name: e.target.value }))}
+                onChange={(event) => handleBaselineFormChange('name', event.target.value)}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2"
                 placeholder="Ej: BL-01"
                 disabled={!canCreateBaselineNow || creatingBaseline}
               />
             </div>
+
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">Descripción</label>
               <textarea
                 value={baselineForm.description}
-                onChange={(e) => setBaselineForm((prev) => ({ ...prev, description: e.target.value }))}
-                className="min-h-20 w-full rounded-lg border border-slate-300 px-3 py-2"
-                placeholder="Opcional"
+                onChange={(event) => handleBaselineFormChange('description', event.target.value)}
+                className="min-h-24 w-full rounded-lg border border-slate-300 px-3 py-2"
+                placeholder="Alcance de la línea base"
                 disabled={!canCreateBaselineNow || creatingBaseline}
               />
             </div>
-            <button
-              type="submit"
-              disabled={!canCreateBaselineNow || creatingBaseline}
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {creatingBaseline ? 'Procesando...' : 'Crear línea base'}
+
+            <button type="submit" disabled={!canCreateBaselineNow || creatingBaseline} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+              {creatingBaseline ? 'Generando...' : 'Generar línea base'}
             </button>
-            {baselinesError ? <div className="text-sm text-rose-600">{baselinesError}</div> : null}
           </form>
         </SectionCard>
       </div>
 
       <div className="space-y-4">
-        <SectionCard title="Lista de proyectos" subtitle="Selecciona el proyecto activo para trabajar en WBS y actividades">
+        <SectionCard title="Proyectos registrados" subtitle="Selecciona el proyecto activo que alimentará WBS, actividades y líneas base">
           <ProjectsTable
             projects={projects}
             activeProjectId={activeProjectId}
@@ -392,14 +445,15 @@ export default function ProjectsPage({
           />
         </SectionCard>
 
-        <SectionCard title="Líneas base del proyecto" subtitle={activeProject ? 'Snapshots congelados del proyecto activo' : 'No hay proyecto activo'}>
+        <SectionCard title="Líneas base del proyecto" subtitle={activeProject ? `Proyecto activo: ${activeProject.name}` : 'Selecciona un proyecto activo'}>
+          {baselinesError ? <InlineAlert tone="warning">{baselinesError}</InlineAlert> : null}
           <BaselinesTable
             baselines={baselines}
             loading={baselinesLoading}
             selectedBaselineId={selectedBaselineId}
             onSelect={setSelectedBaselineId}
             onDelete={handleDeleteBaseline}
-            canDelete={canDeleteBaselineNow}
+            canDelete={canDeleteBaseline && !operationallyLocked}
           />
         </SectionCard>
       </div>

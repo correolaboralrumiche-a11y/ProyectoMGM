@@ -17,7 +17,8 @@ function formatBoolean(value) {
   return value ? 'Activo' : 'Inactivo';
 }
 
-export default function CatalogsPage({ canWrite = false }) {
+export default function CatalogsPage({ canWrite = false, canManage = false }) {
+  const allowWrite = Boolean(canWrite || canManage);
   const [catalogs, setCatalogs] = useState([]);
   const [activeKey, setActiveKey] = useState('project-statuses');
   const [form, setForm] = useState(EMPTY_FORM);
@@ -32,7 +33,6 @@ export default function CatalogsPage({ canWrite = false }) {
     async function load() {
       setLoading(true);
       setError('');
-
       try {
         const data = await catalogsApi.listAll();
         if (!cancelled) {
@@ -47,22 +47,17 @@ export default function CatalogsPage({ canWrite = false }) {
           setError(err.message || 'No se pudieron cargar los catálogos.');
         }
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     }
 
     load();
-
     return () => {
       cancelled = true;
     };
-  }, [activeKey]);
+  }, []);
 
-  const activeCatalog = useMemo(() => {
-    return catalogs.find((item) => item.key === activeKey) || null;
-  }, [catalogs, activeKey]);
+  const activeCatalog = useMemo(() => catalogs.find((item) => item.key === activeKey) || null, [catalogs, activeKey]);
 
   function resetForm() {
     setEditingCode('');
@@ -78,7 +73,7 @@ export default function CatalogsPage({ canWrite = false }) {
 
   async function handleSubmit(event) {
     event.preventDefault();
-    if (!canWrite || !activeCatalog) return;
+    if (!allowWrite || !activeCatalog) return;
 
     setSaving(true);
     setError('');
@@ -160,7 +155,7 @@ export default function CatalogsPage({ canWrite = false }) {
           <div className="border-b border-slate-200 px-5 py-4">
             <h3 className="text-lg font-semibold text-slate-900">{activeCatalog?.label || 'Catálogo'}</h3>
             <p className="mt-1 text-sm text-slate-600">
-              {canWrite
+              {allowWrite
                 ? 'Puedes crear, editar y desactivar registros maestros.'
                 : 'Acceso en modo lectura. No tienes permiso para modificar catálogos.'}
             </p>
@@ -168,7 +163,7 @@ export default function CatalogsPage({ canWrite = false }) {
 
           {error ? <div className="px-5 pt-4 text-sm text-rose-600">{error}</div> : null}
 
-          {canWrite ? (
+          {allowWrite ? (
             <form className="grid gap-3 border-b border-slate-200 p-5 md:grid-cols-2" onSubmit={handleSubmit}>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-700">Código</label>
@@ -246,7 +241,7 @@ export default function CatalogsPage({ canWrite = false }) {
                   <th className="px-4 py-3 font-medium">Orden</th>
                   <th className="px-4 py-3 font-medium">Uso</th>
                   <th className="px-4 py-3 font-medium">Descripción</th>
-                  {canWrite ? <th className="px-4 py-3 font-medium">Acciones</th> : null}
+                  {allowWrite ? <th className="px-4 py-3 font-medium">Acciones</th> : null}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -258,12 +253,12 @@ export default function CatalogsPage({ canWrite = false }) {
                     <td className="px-4 py-3 text-slate-700">{item.sort_order}</td>
                     <td className="px-4 py-3 text-slate-700">{item.usage_count || 0}</td>
                     <td className="px-4 py-3 text-slate-700">{item.description || '—'}</td>
-                    {canWrite ? (
+                    {allowWrite ? (
                       <td className="px-4 py-3">
                         <button
                           type="button"
                           onClick={() => handleEdit(item)}
-                          className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          className="rounded-md bg-slate-100 px-2 py-1 text-xs hover:bg-slate-200"
                         >
                           Editar
                         </button>

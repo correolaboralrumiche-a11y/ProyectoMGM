@@ -46,6 +46,9 @@ function activityAuditSnapshot(activity) {
     progress: Number(activity.progress || 0),
     budget_hours: Number(activity.budget_hours ?? activity.hours ?? 0),
     budget_cost: Number(activity.budget_cost ?? activity.cost ?? 0),
+    baseline_budget_hours: Number(activity.baseline_budget_hours ?? activity.baseline?.hours ?? 0),
+    baseline_budget_cost: Number(activity.baseline_budget_cost ?? activity.baseline?.cost ?? 0),
+    ev_amount: Number(activity.ev_amount || 0),
     actual_hours: Number(activity.actual_hours || 0),
     actual_cost: Number(activity.actual_cost || 0),
     remaining_hours: Number(activity.remaining_hours || 0),
@@ -58,6 +61,8 @@ function activityAuditSnapshot(activity) {
     activity_type_name: activity.activity_type_name || null,
     priority_code: activity.priority_code,
     priority_name: activity.priority_name || null,
+    discipline_code: activity.discipline_code,
+    discipline_name: activity.discipline_name || null,
     sort_order: Number(activity.sort_order || 0),
     notes: activity.notes || '',
   };
@@ -147,12 +152,7 @@ async function ensureWbsExists(wbsId, executor) {
 }
 
 async function ensureUniqueActivityId(projectId, activityId, excludedId, executor) {
-  const duplicate = await activitiesRepository.findByProjectAndActivityId(
-    projectId,
-    activityId,
-    excludedId,
-    executor
-  );
+  const duplicate = await activitiesRepository.findByProjectAndActivityId(projectId, activityId, excludedId, executor);
 
   if (duplicate) {
     throw new AppError('Activity ID must be unique within the project', 409);
@@ -174,6 +174,13 @@ async function resequenceWbsActivities(wbsId, executor, actorId) {
   await applySiblingOrder(siblings, executor, actorId);
 }
 
+function deriveStatusCodeFromProgress(progress) {
+  const normalizedProgress = normalizeNumber(progress, 0);
+  if (normalizedProgress >= 100) return 'completed';
+  if (normalizedProgress <= 0) return 'not_started';
+  return 'in_progress';
+}
+
 async function buildNormalizedActivity(payload, existing, wbs, actorId, executor) {
   const startDate = Object.prototype.hasOwnProperty.call(payload || {}, 'start_date')
     ? normalizeOptionalDate(payload.start_date)
@@ -183,12 +190,18 @@ async function buildNormalizedActivity(payload, existing, wbs, actorId, executor
     ? normalizeOptionalDate(payload.end_date)
     : existing?.end_date || null;
 
+  const progress = normalizeNumber(payload?.progress ?? existing?.progress, existing?.progress ?? 0);
+  const defaultStatus = deriveStatusCodeFromProgress(progress);
+
+  const hasExplicitStatus = Object.prototype.hasOwnProperty.call(payload || {}, 'status_code')
+    || Object.prototype.hasOwnProperty.call(payload || {}, 'status');
+
   const status_code = await resolveCatalogCode(
     'activity-statuses',
-    payload?.status_code ?? payload?.status ?? existing?.status_code ?? existing?.status,
-    'not_started',
+    hasExplicitStatus ? (payload?.status_code ?? payload?.status) : defaultStatus,
+    defaultStatus,
     executor,
-    { legacyStatusMap: LEGACY_STATUS_CODE_MAP, label: 'activity status' }
+    { legacyStatusMap: LEGACY_STATUS_CODE_MAP, label: 'activity status' },
   );
 
   const activity_type_code = await resolveCatalogCode(
@@ -196,7 +209,7 @@ async function buildNormalizedActivity(payload, existing, wbs, actorId, executor
     payload?.activity_type_code ?? payload?.activity_type ?? existing?.activity_type_code,
     'task',
     executor,
-    { label: 'activity type' }
+    { label: 'activity type' },
   );
 
   const priority_code = await resolveCatalogCode(
@@ -204,7 +217,15 @@ async function buildNormalizedActivity(payload, existing, wbs, actorId, executor
     payload?.priority_code ?? payload?.priority ?? existing?.priority_code,
     'medium',
     executor,
-    { label: 'activity priority' }
+    { label: 'activity priority' },
+  );
+
+  const discipline_code = await resolveCatalogCode(
+    'disciplines',
+    payload?.discipline_code ?? payload?.discipline ?? existing?.discipline_code,
+    'general',
+    executor,
+    { label: 'activity discipline' },
   );
 
   const normalized = {
@@ -214,18 +235,19 @@ async function buildNormalizedActivity(payload, existing, wbs, actorId, executor
     name: normalizeText(payload?.name ?? existing?.name),
     start_date: startDate,
     end_date: endDate,
-    progress: normalizeNumber(payload?.progress ?? existing?.progress, existing?.progress ?? 0),
+    progress,
     hours: normalizeNumber(
       payload?.budget_hours ?? payload?.hours ?? existing?.budget_hours ?? existing?.hours,
-      existing?.budget_hours ?? existing?.hours ?? 0
+      existing?.budget_hours ?? existing?.hours ?? 0,
     ),
     cost: normalizeNumber(
       payload?.budget_cost ?? payload?.cost ?? existing?.budget_cost ?? existing?.cost,
-      existing?.budget_cost ?? existing?.cost ?? 0
+      existing?.budget_cost ?? existing?.cost ?? 0,
     ),
     status_code,
     activity_type_code,
     priority_code,
+    discipline_code,
     notes: Object.prototype.hasOwnProperty.call(payload || {}, 'notes')
       ? normalizeOptionalText(payload?.notes)
       : normalizeOptionalText(existing?.notes),
@@ -234,26 +256,16 @@ async function buildNormalizedActivity(payload, existing, wbs, actorId, executor
     updated_by: actorId || existing?.updated_by || null,
   };
 
-  normalized.duration =
-    normalized.start_date && normalized.end_date
-      ? computeDuration(normalized.start_date, normalized.end_date)
-      : Math.max(0, normalizeNumber(payload?.duration ?? existing?.duration, existing?.duration ?? 0));
+  normalized.duration = normalized.start_date && normalized.end_date
+    ? computeDuration(normalized.start_date, normalized.end_date)
+    : Math.max(0, normalizeNumber(payload?.duration ?? existing?.duration, existing?.duration ?? 0));
 
   return normalized;
 }
 
-function deriveStatusCodeFromProgress(progress) {
-  const normalizedProgress = normalizeNumber(progress, 0);
-  if (normalizedProgress >= 100) return 'completed';
-  if (normalizedProgress <= 0) return 'not_started';
-  return 'in_progress';
-}
-
 function normalizeRequiredDate(value, fallback = getTodayDate()) {
   const trimmed = normalizeText(value);
-  if (!trimmed) {
-    return fallback;
-  }
+  if (!trimmed) return fallback;
 
   const normalized = normalizeOptionalDate(trimmed);
   if (!normalized) {
@@ -283,6 +295,9 @@ function buildControlSummary(activity) {
   return {
     budget_hours: Number(activity.budget_hours ?? activity.hours ?? 0),
     budget_cost: Number(activity.budget_cost ?? activity.cost ?? 0),
+    baseline_budget_hours: Number(activity.baseline_budget_hours ?? activity.baseline?.hours ?? 0),
+    baseline_budget_cost: Number(activity.baseline_budget_cost ?? activity.baseline?.cost ?? 0),
+    ev_amount: Number(activity.ev_amount ?? 0),
     actual_hours: Number(activity.actual_hours ?? 0),
     actual_cost: Number(activity.actual_cost ?? 0),
     remaining_hours: Number(activity.remaining_hours ?? 0),
@@ -293,6 +308,37 @@ function buildControlSummary(activity) {
     progress_update_count: Number(activity.progress_update_count ?? 0),
     actual_entry_count: Number(activity.actual_entry_count ?? 0),
   };
+}
+
+async function syncProgressFromSummaryIfNeeded(existing, updated, payload, actorId, executor) {
+  const payloadHasProgress = Object.prototype.hasOwnProperty.call(payload || {}, 'progress');
+  const payloadHasStatus = Object.prototype.hasOwnProperty.call(payload || {}, 'status_code')
+    || Object.prototype.hasOwnProperty.call(payload || {}, 'status');
+
+  if (!payloadHasProgress && !payloadHasStatus) {
+    return null;
+  }
+
+  const progressChanged = Number(existing.progress || 0) !== Number(updated.progress || 0);
+  const statusChanged = String(existing.status_code || '') !== String(updated.status_code || '');
+
+  if (!progressChanged && !statusChanged) {
+    return null;
+  }
+
+  return activitiesRepository.insertProgressUpdate(
+    {
+      activity_id: existing.id,
+      project_id: existing.project_id,
+      update_date: normalizeRequiredDate(payload?.progress_date ?? payload?.update_date),
+      progress_percent: Number(updated.progress || 0),
+      status_code: updated.status_code,
+      notes: normalizeOptionalText(payload?.progress_notes || payload?.notes || 'Sincronizado desde la grilla de actividades'),
+      created_by: actorId,
+      source_type: 'summary_sync',
+    },
+    executor,
+  );
 }
 
 export const activitiesService = {
@@ -342,8 +388,7 @@ export const activitiesService = {
 
     return withTransaction(async (client) => {
       const wbs = await ensureWbsExists(wbsId, client);
-      const activityId =
-        normalizeText(payload?.activity_id) || (await buildDefaultActivityId(wbs.project_id, client));
+      const activityId = normalizeText(payload?.activity_id) || (await buildDefaultActivityId(wbs.project_id, client));
 
       const activity = await buildNormalizedActivity(
         {
@@ -354,7 +399,7 @@ export const activitiesService = {
         null,
         wbs,
         actorId,
-        client
+        client,
       );
 
       activity.sort_order = (await activitiesRepository.getMaxSortOrder(wbsId, client)) + 1;
@@ -365,6 +410,22 @@ export const activitiesService = {
       const created = await activitiesRepository.create(activity, client);
       await resequenceWbsActivities(wbsId, client, actorId);
       const persisted = await activitiesRepository.findById(created.id, client);
+
+      if (Number(persisted.progress || 0) > 0) {
+        await activitiesRepository.insertProgressUpdate(
+          {
+            activity_id: persisted.id,
+            project_id: persisted.project_id,
+            update_date: getTodayDate(),
+            progress_percent: Number(persisted.progress || 0),
+            status_code: persisted.status_code,
+            notes: 'Registro inicial desde creación de actividad',
+            created_by: actorId,
+            source_type: 'seed',
+          },
+          client,
+        );
+      }
 
       await auditRepository.create(
         {
@@ -378,7 +439,7 @@ export const activitiesService = {
           after_data: activityAuditSnapshot(persisted),
           ...requestContext,
         },
-        client
+        client,
       );
 
       return persisted;
@@ -404,15 +465,15 @@ export const activitiesService = {
       const targetWbs = await ensureWbsExists(targetWbsId, client);
       const normalized = await buildNormalizedActivity(payload, existing, targetWbs, actorId, client);
 
-      normalized.sort_order =
-        targetWbs.id === existing.wbs_id
-          ? existing.sort_order
-          : (await activitiesRepository.getMaxSortOrder(targetWbs.id, client)) + 1;
+      normalized.sort_order = targetWbs.id === existing.wbs_id
+        ? existing.sort_order
+        : (await activitiesRepository.getMaxSortOrder(targetWbs.id, client)) + 1;
 
       ensureValidActivityPayload(normalized);
       await ensureUniqueActivityId(normalized.project_id, normalized.activity_id, existing.id, client);
 
       const updated = await activitiesRepository.update(existing.id, normalized, client);
+      await syncProgressFromSummaryIfNeeded(existing, updated, payload, actorId, client);
 
       await resequenceWbsActivities(updated.wbs_id, client, actorId);
       if (existing.wbs_id !== updated.wbs_id) {
@@ -433,7 +494,7 @@ export const activitiesService = {
           after_data: activityAuditSnapshot(persisted),
           ...requestContext,
         },
-        client
+        client,
       );
 
       return persisted;
@@ -446,17 +507,14 @@ export const activitiesService = {
 
     return withTransaction(async (client) => {
       const existing = await ensureActivityExists(normalizedActivityId, client);
-      const progress = normalizeProgressValue(
-        payload?.progress_percent ?? payload?.progress,
-        existing.progress ?? 0
-      );
+      const progress = normalizeProgressValue(payload?.progress_percent ?? payload?.progress, existing.progress ?? 0);
       const update_date = normalizeRequiredDate(payload?.update_date);
       const status_code = await resolveCatalogCode(
         'activity-statuses',
         payload?.status_code ?? payload?.status ?? deriveStatusCodeFromProgress(progress),
         deriveStatusCodeFromProgress(progress),
         client,
-        { legacyStatusMap: LEGACY_STATUS_CODE_MAP, label: 'activity status' }
+        { legacyStatusMap: LEGACY_STATUS_CODE_MAP, label: 'activity status' },
       );
       const notes = normalizeOptionalText(payload?.notes);
 
@@ -471,7 +529,7 @@ export const activitiesService = {
           created_by: actorId,
           source_type: 'manual',
         },
-        client
+        client,
       );
 
       await activitiesRepository.updateProgressSummary(
@@ -481,7 +539,7 @@ export const activitiesService = {
           status_code,
           updated_by: actorId,
         },
-        client
+        client,
       );
 
       const refreshed = await activitiesRepository.findById(existing.id, client);
@@ -494,11 +552,12 @@ export const activitiesService = {
           project_id: existing.project_id,
           action: 'progress_update',
           summary: `Progress update recorded for ${existing.activity_id}: ${progress}%`,
-          before_data: { progress: existing.progress, status_code: existing.status_code },
+          before_data: { progress: existing.progress, status_code: existing.status_code, ev_amount: existing.ev_amount },
           after_data: {
             progress: refreshed.progress,
             status_code: refreshed.status_code,
             latest_progress_date: refreshed.latest_progress_date,
+            ev_amount: refreshed.ev_amount,
           },
           metadata: {
             progress_update_id: entry.id,
@@ -506,7 +565,7 @@ export const activitiesService = {
           },
           ...requestContext,
         },
-        client
+        client,
       );
 
       return {
@@ -543,7 +602,7 @@ export const activitiesService = {
           created_by: actorId,
           source_type: 'manual',
         },
-        client
+        client,
       );
 
       await activitiesRepository.touchActivity(existing.id, actorId, client);
@@ -575,7 +634,7 @@ export const activitiesService = {
           },
           ...requestContext,
         },
-        client
+        client,
       );
 
       return {
@@ -612,7 +671,7 @@ export const activitiesService = {
           direction === 'up'
             ? 'Activity is already at the top of its WBS level'
             : 'Activity is already at the bottom of its WBS level',
-          400
+          400,
         );
       }
 
@@ -636,7 +695,7 @@ export const activitiesService = {
           metadata: { direction },
           ...requestContext,
         },
-        client
+        client,
       );
 
       return persisted;
@@ -662,7 +721,7 @@ export const activitiesService = {
           after_data: null,
           ...requestContext,
         },
-        client
+        client,
       );
 
       await activitiesRepository.remove(existing.id, client);

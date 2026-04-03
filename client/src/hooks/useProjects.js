@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { projectsApi } from '../services/projectsApi.js';
 import { getErrorMessage } from '../utils/error.js';
 
@@ -12,6 +12,18 @@ function readStoredProjectId() {
   }
 }
 
+function persistProjectId(projectId) {
+  try {
+    if (projectId) {
+      localStorage.setItem(STORAGE_KEY, projectId);
+    } else {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  } catch {
+    // no-op
+  }
+}
+
 export function useProjects() {
   const [projects, setProjects] = useState([]);
   const [activeProjectId, setActiveProjectIdState] = useState(() => readStoredProjectId());
@@ -22,19 +34,10 @@ export function useProjects() {
   const setActiveProjectId = useCallback((projectId) => {
     const nextId = projectId || '';
     setActiveProjectIdState(nextId);
-
-    try {
-      if (nextId) {
-        localStorage.setItem(STORAGE_KEY, nextId);
-      } else {
-        localStorage.removeItem(STORAGE_KEY);
-      }
-    } catch {
-      // no-op
-    }
+    persistProjectId(nextId);
   }, []);
 
-  const loadProjects = useCallback(
+  const reloadProjects = useCallback(
     async (preferredProjectId = null) => {
       const requestId = ++requestRef.current;
       setLoading(true);
@@ -42,21 +45,25 @@ export function useProjects() {
 
       try {
         const data = await projectsApi.list();
-        if (requestRef.current !== requestId) return [];
+
+        if (requestRef.current !== requestId) {
+          return [];
+        }
 
         const normalized = Array.isArray(data) ? data : [];
         setProjects(normalized);
-
-        const preferred = preferredProjectId !== null ? preferredProjectId : activeProjectId;
 
         if (!normalized.length) {
           setActiveProjectId('');
           return normalized;
         }
 
-        if (preferred && normalized.some((item) => item.id === preferred)) {
-          if (preferred !== activeProjectId) {
-            setActiveProjectId(preferred);
+        const requestedProjectId = preferredProjectId !== null ? preferredProjectId : activeProjectId;
+        const requestedExists = requestedProjectId && normalized.some((item) => item.id === requestedProjectId);
+
+        if (requestedExists) {
+          if (requestedProjectId !== activeProjectId) {
+            setActiveProjectId(requestedProjectId);
           }
           return normalized;
         }
@@ -66,6 +73,7 @@ export function useProjects() {
         return normalized;
       } catch (err) {
         if (requestRef.current === requestId) {
+          setProjects([]);
           setError(getErrorMessage(err, 'No se pudieron cargar los proyectos.'));
         }
         return [];
@@ -75,19 +83,25 @@ export function useProjects() {
         }
       }
     },
-    [activeProjectId, setActiveProjectId]
+    [activeProjectId, setActiveProjectId],
   );
 
   useEffect(() => {
-    loadProjects();
-  }, [loadProjects]);
+    reloadProjects();
+  }, [reloadProjects]);
+
+  const activeProject = useMemo(
+    () => projects.find((project) => project.id === activeProjectId) || null,
+    [projects, activeProjectId],
+  );
 
   return {
     projects,
     activeProjectId,
+    activeProject,
     setActiveProjectId,
     loading,
     error,
-    reloadProjects: loadProjects,
+    reloadProjects,
   };
 }

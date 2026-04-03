@@ -1,228 +1,215 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import SectionCard from '../components/common/SectionCard.jsx';
+import InlineAlert from '../components/common/InlineAlert.jsx';
 import DataTable from '../components/activities/DataTable.jsx';
 import { activitiesApi } from '../services/activitiesApi.js';
-import { api } from '../services/api.js';
+import { catalogsApi } from '../services/catalogsApi.js';
+import { controlPeriodsApi } from '../services/controlPeriodsApi.js';
+import { useBaselines } from '../hooks/useBaselines.js';
+import { useControlPeriods } from '../hooks/useControlPeriods.js';
+import { getErrorMessage } from '../utils/error.js';
+import { buildActivityRows, getTreeSignature } from '../utils/tree.js';
 
-function normalizeDateValue(value) {
-  if (value === null || value === undefined || value === '') return null;
-
-  const normalized = String(value).trim();
-  if (!normalized) return null;
-
-  const match = normalized.match(/^(\d{4}-\d{2}-\d{2})/);
-  return match ? match[1] : normalized;
-}
-
-
-function getEarliestDate(values) {
-  const filtered = values.map(normalizeDateValue).filter(Boolean).sort();
-  return filtered[0] || null;
-}
-
-function getLatestDate(values) {
-  const filtered = values.map(normalizeDateValue).filter(Boolean).sort();
-  return filtered[filtered.length - 1] || null;
-}
-
-function computeDuration(startDate, endDate) {
-  if (!startDate || !endDate) return 0;
-
-  const normalizedStart = normalizeDateValue(startDate);
-  const normalizedEnd = normalizeDateValue(endDate);
-
-  if (!normalizedStart || !normalizedEnd) return 0;
-
-  const start = new Date(`${normalizedStart}T00:00:00`);
-  const end = new Date(`${normalizedEnd}T00:00:00`);
-
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
-
-  const diff = Math.round((end - start) / (1000 * 60 * 60 * 24));
-  return diff >= 0 ? diff : 0;
-}
-
-function buildBaselineMap(baselineActivities) {
-  const map = new Map();
-
-  (baselineActivities || []).forEach((item) => {
-    if (item.original_activity_id) {
-      map.set(`original:${item.original_activity_id}`, item);
-    }
-
-    if (item.activity_id) {
-      map.set(`activity:${item.activity_id}`, item);
-    }
-  });
-
-  return map;
-}
-
-function flattenTree(nodes, output = []) {
-  (nodes || []).forEach((node) => {
-    output.push(node);
-    flattenTree(node.children || [], output);
-  });
-  return output;
-}
-
-function createWbsRollupRow(node, descendantActivities, level) {
-  const totalHours = descendantActivities.reduce((sum, activity) => sum + Number(activity.hours || 0), 0);
-  const totalCost = descendantActivities.reduce((sum, activity) => sum + Number(activity.cost || 0), 0);
-  const earliestStart = getEarliestDate(descendantActivities.map((activity) => activity.start_date));
-  const latestEnd = getLatestDate(descendantActivities.map((activity) => activity.end_date));
-
-  let weightedProgress = 0;
-  if (descendantActivities.length > 0) {
-    if (totalHours > 0) {
-      weightedProgress =
-        descendantActivities.reduce(
-          (sum, activity) => sum + Number(activity.progress || 0) * Number(activity.hours || 0),
-          0
-        ) / totalHours;
-    } else if (totalCost > 0) {
-      weightedProgress =
-        descendantActivities.reduce(
-          (sum, activity) => sum + Number(activity.progress || 0) * Number(activity.cost || 0),
-          0
-        ) / totalCost;
-    } else {
-      weightedProgress =
-        descendantActivities.reduce((sum, activity) => sum + Number(activity.progress || 0), 0) /
-        descendantActivities.length;
-    }
-  }
-
-  return {
-    type: 'wbs',
-    level,
-    ...node,
-    rollup_hours: Number(totalHours.toFixed(2)),
-    rollup_cost: Number(totalCost.toFixed(2)),
-    rollup_progress: Number(weightedProgress.toFixed(2)),
-    rollup_start_date: earliestStart,
-    rollup_end_date: latestEnd,
-    rollup_duration: computeDuration(earliestStart, latestEnd),
-    rollup_activity_count: descendantActivities.length,
-    direct_activity_count: descendantActivities.length,
-  };
-}
-
-function buildWbsRows(tree, activities, baselineMap) {
-  const activitiesByWbs = new Map();
-
-  activities.forEach((activity) => {
-    const list = activitiesByWbs.get(activity.wbs_id) || [];
-    list.push(activity);
-    activitiesByWbs.set(activity.wbs_id, list);
-  });
-
-  const treeNodes = flattenTree(tree);
-  const treeNodeIds = new Set(treeNodes.map((node) => node.id));
-
-  function visit(node, level = 0) {
-    const directActivities = (activitiesByWbs.get(node.id) || []).map((activity) => {
-      const baseline =
-        baselineMap.get(`original:${activity.id}`) || baselineMap.get(`activity:${activity.activity_id}`) || null;
-
-      return {
-        ...activity,
-        start_date: normalizeDateValue(activity.start_date),
-        end_date: normalizeDateValue(activity.end_date),
-        baseline: baseline
-          ? {
-              ...baseline,
-              start_date: normalizeDateValue(baseline.start_date),
-              end_date: normalizeDateValue(baseline.end_date),
-            }
-          : null,
-      };
-    });
-
-    const childResults = (node.children || []).map((child) => visit(child, level + 1));
-    const descendantActivities = [
-      ...directActivities,
-      ...childResults.flatMap((result) => result.descendantActivities),
-    ];
-
-    const wbsRow = createWbsRollupRow(node, descendantActivities, level);
-    const directActivityRows = directActivities.map((activity) => ({
-      type: 'activity',
-      level,
-      ...activity,
-    }));
-
-    return {
-      descendantActivities,
-      rows: [wbsRow, ...directActivityRows, ...childResults.flatMap((result) => result.rows)],
-    };
-  }
-
-  const rows = tree.flatMap((node) => visit(node, 0).rows);
-
-  const orphanGroups = activities
-    .filter((activity) => !treeNodeIds.has(activity.wbs_id))
-    .reduce((map, activity) => {
-      const key = activity.wbs_id || '__unknown__';
-      const list = map.get(key) || [];
-      const baseline =
-        baselineMap.get(`original:${activity.id}`) || baselineMap.get(`activity:${activity.activity_id}`) || null;
-
-      list.push({
-        ...activity,
-        start_date: normalizeDateValue(activity.start_date),
-        end_date: normalizeDateValue(activity.end_date),
-        baseline: baseline
-          ? {
-              ...baseline,
-              start_date: normalizeDateValue(baseline.start_date),
-              end_date: normalizeDateValue(baseline.end_date),
-            }
-          : null,
-      });
-      map.set(key, list);
-      return map;
-    }, new Map());
-
-  let orphanIndex = 0;
-  for (const [wbsId, orphanActivities] of orphanGroups.entries()) {
-    orphanIndex += 1;
-    const pseudoNode = {
-      id: `__orphan__${wbsId}`,
-      project_id: orphanActivities[0]?.project_id || null,
-      parent_id: null,
-      name: orphanActivities[0]?.wbs_name || 'WBS sin sincronizar',
-      code: orphanActivities[0]?.wbs_code || `ORPHAN-${orphanIndex}`,
-      sort_order: 999000 + orphanIndex,
-      children: [],
-    };
-
-    const wbsRow = createWbsRollupRow(pseudoNode, orphanActivities, 0);
-    rows.push(wbsRow);
-    rows.push(
-      ...orphanActivities.map((activity) => ({
-        type: 'activity',
-        level: 0,
-        ...activity,
-      }))
+function BaselineBanner({ latestBaseline, baselineLoading, baselineError }) {
+  if (latestBaseline) {
+    return (
+      <InlineAlert tone="info" className="mb-3">
+        Línea Base visible: <strong>{latestBaseline.name}</strong>. El EV monetario se calcula como <strong>% avance acumulado × presupuesto LB</strong>.
+      </InlineAlert>
     );
   }
+  if (baselineLoading) {
+    return <InlineAlert tone="info" className="mb-3">Cargando línea base...</InlineAlert>;
+  }
+  if (baselineError) {
+    return <InlineAlert tone="warning" className="mb-3">{baselineError}</InlineAlert>;
+  }
+  return <InlineAlert tone="info" className="mb-3">Este proyecto no tiene línea base registrada. Sin línea base, el EV monetario será 0.</InlineAlert>;
+}
 
-  return rows;
+function getSelectionStorageKey(projectId) {
+  return projectId ? `erp:selected-financial-period:${projectId}` : '';
+}
+
+function getPreferredFinancialPeriodId(projectId) {
+  if (!projectId || typeof window === 'undefined') return '';
+  return window.localStorage.getItem(getSelectionStorageKey(projectId)) || '';
+}
+
+function setPreferredFinancialPeriodId(projectId, periodId) {
+  if (!projectId || typeof window === 'undefined') return;
+  const key = getSelectionStorageKey(projectId);
+  if (!periodId) {
+    window.localStorage.removeItem(key);
+    return;
+  }
+  window.localStorage.setItem(key, periodId);
+}
+
+function getColumnSettingsStorageKey(projectId) {
+  return projectId ? `erp:activities-column-settings:${projectId}` : 'erp:activities-column-settings:default';
+}
+
+function getInitialSnapshotDate(financialPeriods, periodId) {
+  const selected = financialPeriods.find((item) => item.id === periodId) || null;
+  return selected?.cutoff_date || '';
+}
+
+function FinancialPeriodContext({
+  activeProjectId,
+  financialPeriods,
+  loading,
+  definitionsError,
+  selectedId,
+  onChange,
+  snapshotDate,
+  onSnapshotDateChange,
+  closeNotes,
+  onCloseNotesChange,
+  onCapture,
+  captureBusy,
+  captureDisabled,
+  captureHelper,
+}) {
+  const selected = useMemo(
+    () => financialPeriods.find((item) => item.id === selectedId) || null,
+    [financialPeriods, selectedId],
+  );
+
+  return (
+    <SectionCard
+      title="Periodo financiero del reporte"
+      description="Selecciona el periodo financiero al que pertenece la actualización semanal y guarda aquí mismo la fotografía financiera del avance acumulado y del EV."
+    >
+      {definitionsError ? <InlineAlert tone="warning" className="mb-3">{definitionsError}</InlineAlert> : null}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,340px),180px,minmax(0,1fr)]">
+        <label className="space-y-2 text-sm text-slate-600">
+          <span className="block font-medium text-slate-700">Periodo financiero objetivo</span>
+          <select
+            value={selectedId}
+            onChange={(event) => onChange(event.target.value)}
+            disabled={!activeProjectId || loading || !financialPeriods.length}
+            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:bg-slate-100"
+          >
+            {!financialPeriods.length ? <option value="">Sin periodos definidos</option> : null}
+            {financialPeriods.map((period) => (
+              <option key={period.id} value={period.id}>
+                {period.period_code} · {period.name}{period.has_snapshot ? ' · Con snapshot' : ' · Disponible'}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="space-y-2 text-sm text-slate-600">
+          <span className="block font-medium text-slate-700">Fecha snapshot</span>
+          <input
+            type="date"
+            value={snapshotDate}
+            onChange={(event) => onSnapshotDateChange(event.target.value)}
+            disabled={!selectedId}
+            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:bg-slate-100"
+          />
+        </label>
+
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+          {selected ? (
+            <>
+              <div className="font-medium text-slate-800">{selected.period_code} · {selected.name}</div>
+              <div className="mt-2">Rango: <strong>{selected.start_date}</strong> → <strong>{selected.end_date}</strong></div>
+              <div className="mt-1">Fecha de corte: <strong>{selected.cutoff_date}</strong></div>
+              <div className="mt-1">Estado: <strong>{selected.has_snapshot ? `Snapshot ${selected.snapshot_status_code || 'registrado'}` : 'Sin snapshot'}</strong></div>
+              <label className="mt-3 block space-y-2">
+                <span className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">Notas del snapshot</span>
+                <input
+                  value={closeNotes}
+                  onChange={(event) => onCloseNotesChange(event.target.value)}
+                  placeholder="Observaciones del cierre financiero"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                />
+              </label>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={onCapture}
+                  disabled={captureDisabled}
+                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {captureBusy ? 'Guardando periodo financiero...' : 'Guardar periodo financiero'}
+                </button>
+              </div>
+              {captureHelper ? <div className="mt-3 text-xs text-slate-500">{captureHelper}</div> : null}
+            </>
+          ) : (
+            <div>
+              Define periodos financieros en la pestaña <strong>Periodos financieros</strong> para poder etiquetar el reporte semanal y guardar su snapshot.
+            </div>
+          )}
+        </div>
+      </div>
+    </SectionCard>
+  );
 }
 
 export default function ActivitiesPage({ activeProject, tree, activities, reloadActivities }) {
   const [requestedCellId, setRequestedCellId] = useState(null);
-  const [baselineMeta, setBaselineMeta] = useState(null);
   const [baselineActivities, setBaselineActivities] = useState([]);
-  const [baselineLoading, setBaselineLoading] = useState(false);
-  const [baselineError, setBaselineError] = useState('');
+  const [baselineDetailLoading, setBaselineDetailLoading] = useState(false);
+  const [pageError, setPageError] = useState('');
+  const [pageSuccess, setPageSuccess] = useState('');
+  const [captureBusy, setCaptureBusy] = useState(false);
+  const [catalogError, setCatalogError] = useState('');
+  const [catalogOptions, setCatalogOptions] = useState({
+    statuses: [],
+    activityTypes: [],
+    priorities: [],
+    disciplines: [],
+  });
+  const [selectedFinancialPeriodId, setSelectedFinancialPeriodId] = useState('');
+  const [snapshotDate, setSnapshotDate] = useState('');
+  const [snapshotNotes, setSnapshotNotes] = useState('');
 
-  const treeSignature = useMemo(() => flattenTree(tree).map((node) => node.id).join('|'), [tree]);
+  const treeSignature = useMemo(() => getTreeSignature(tree), [tree]);
+  const { latestBaseline, loading: baselinesLoading, error: baselinesError, loadBaselineDetail } = useBaselines(activeProject?.id);
+  const {
+    financialPeriods,
+    definitionsLoading,
+    definitionsError,
+    nextPendingFinancialPeriod,
+    reloadFinancialPeriods,
+    reloadPeriods,
+  } = useControlPeriods(activeProject?.id);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCatalogs() {
+      try {
+        const [statuses, activityTypes, priorities, disciplines] = await Promise.all([
+          catalogsApi.get('activity-statuses', { includeInactive: false }),
+          catalogsApi.get('activity-types', { includeInactive: false }),
+          catalogsApi.get('activity-priorities', { includeInactive: false }),
+          catalogsApi.get('disciplines', { includeInactive: false }),
+        ]);
+        if (!cancelled) {
+          setCatalogOptions({
+            statuses: Array.isArray(statuses?.items) ? statuses.items : [],
+            activityTypes: Array.isArray(activityTypes?.items) ? activityTypes.items : [],
+            priorities: Array.isArray(priorities?.items) ? priorities.items : [],
+            disciplines: Array.isArray(disciplines?.items) ? disciplines.items : [],
+          });
+          setCatalogError('');
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setCatalogError(getErrorMessage(error, 'No se pudieron cargar los catálogos de actividades.'));
+        }
+      }
+    }
+    loadCatalogs();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!activeProject?.id) return;
-
     reloadActivities?.().catch((error) => {
       console.error('No se pudo recargar actividades al cambiar el WBS', error);
     });
@@ -230,139 +217,227 @@ export default function ActivitiesPage({ activeProject, tree, activities, reload
 
   useEffect(() => {
     let cancelled = false;
-
-    async function loadLatestBaseline() {
-      if (!activeProject?.id) {
-        setBaselineMeta(null);
+    async function loadLatestBaselineDetail() {
+      if (!latestBaseline?.id) {
         setBaselineActivities([]);
-        setBaselineError('');
+        setBaselineDetailLoading(false);
         return;
       }
-
-      setBaselineLoading(true);
-      setBaselineError('');
-
+      setBaselineDetailLoading(true);
       try {
-        const list = await api.get(`/baselines?projectId=${activeProject.id}`);
-        const baselines = Array.isArray(list) ? list : [];
-
-        if (!baselines.length) {
-          if (!cancelled) {
-            setBaselineMeta(null);
-            setBaselineActivities([]);
-          }
-          return;
-        }
-
-        const latest = [...baselines].sort((a, b) => {
-          const aTime = new Date(a.created_at || 0).getTime();
-          const bTime = new Date(b.created_at || 0).getTime();
-          return bTime - aTime;
-        })[0];
-
-        const detail = await api.get(`/baselines/${latest.id}`);
+        const detail = await loadBaselineDetail(latestBaseline.id);
         if (!cancelled) {
-          setBaselineMeta(latest);
           setBaselineActivities(Array.isArray(detail?.activities) ? detail.activities : []);
         }
       } catch (error) {
         if (!cancelled) {
-          setBaselineMeta(null);
           setBaselineActivities([]);
-          setBaselineError(error.message || 'No se pudo cargar la línea base');
+          setPageError(getErrorMessage(error, 'No se pudo cargar el detalle de la línea base.'));
         }
       } finally {
-        if (!cancelled) {
-          setBaselineLoading(false);
-        }
+        if (!cancelled) setBaselineDetailLoading(false);
       }
     }
 
-    loadLatestBaseline();
+    setPageError('');
+    loadLatestBaselineDetail();
+    return () => { cancelled = true; };
+  }, [latestBaseline?.id, loadBaselineDetail]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [activeProject?.id]);
+  useEffect(() => {
+    if (!activeProject?.id) {
+      setSelectedFinancialPeriodId('');
+      setSnapshotDate('');
+      return;
+    }
 
-  const baselineMap = useMemo(() => buildBaselineMap(baselineActivities), [baselineActivities]);
-  const rows = useMemo(() => buildWbsRows(tree, activities, baselineMap), [activities, baselineMap, tree]);
+    const stored = getPreferredFinancialPeriodId(activeProject.id);
+    const storedIsValid = stored && financialPeriods.some((item) => item.id === stored);
+    const nextCandidate = storedIsValid
+      ? stored
+      : nextPendingFinancialPeriod?.id || financialPeriods[0]?.id || '';
 
-  const handleRequestedCellHandled = useCallback(() => {
-    setRequestedCellId(null);
+    setSelectedFinancialPeriodId(nextCandidate);
+    setSnapshotDate((current) => current || getInitialSnapshotDate(financialPeriods, nextCandidate));
+  }, [activeProject?.id, financialPeriods, nextPendingFinancialPeriod]);
+
+  const selectedFinancialPeriod = useMemo(
+    () => financialPeriods.find((item) => item.id === selectedFinancialPeriodId) || null,
+    [financialPeriods, selectedFinancialPeriodId],
+  );
+
+  useEffect(() => {
+    if (!selectedFinancialPeriod) return;
+    setSnapshotDate((current) => current || selectedFinancialPeriod.cutoff_date || '');
+  }, [selectedFinancialPeriod]);
+
+  const rows = useMemo(() => buildActivityRows(tree, activities, baselineActivities), [activities, baselineActivities, tree]);
+  const columnSettingsKey = useMemo(() => getColumnSettingsStorageKey(activeProject?.id), [activeProject?.id]);
+
+  const handleRequestedCellHandled = useCallback(() => setRequestedCellId(null), []);
+
+  const runActivityMutation = useCallback(async (action) => {
+    setPageError('');
+    setPageSuccess('');
+    try {
+      return await action();
+    } catch (error) {
+      const message = getErrorMessage(error, 'No se pudo completar la operación sobre actividades.');
+      setPageError(message);
+      throw error;
+    }
   }, []);
 
-  if (!activeProject) {
-    return <SectionCard title="Actividades">No hay proyecto activo.</SectionCard>;
-  }
+  const handleFinancialPeriodChange = useCallback((periodId) => {
+    setSelectedFinancialPeriodId(periodId);
+    setPreferredFinancialPeriodId(activeProject?.id, periodId);
+    setSnapshotDate(getInitialSnapshotDate(financialPeriods, periodId));
+    setPageError('');
+    setPageSuccess('');
+  }, [activeProject?.id, financialPeriods]);
 
-  async function handleAddActivity(wbsNode) {
+  const handleCaptureFinancialPeriod = useCallback(async () => {
+    if (!activeProject?.id || !selectedFinancialPeriodId) return;
+
+    setPageError('');
+    setPageSuccess('');
+    setCaptureBusy(true);
+
     try {
-      const created = await activitiesApi.create({
-        wbs_id: wbsNode.id,
-        name: 'Nueva actividad',
-        status: 'Not Started',
-        progress: 0,
-        hours: 0,
-        cost: 0,
+      await controlPeriodsApi.capture({
+        project_id: activeProject.id,
+        financial_period_id: selectedFinancialPeriodId,
+        snapshot_date: snapshotDate || selectedFinancialPeriod?.cutoff_date || '',
+        close_notes: snapshotNotes,
       });
-      setRequestedCellId(`${created.id}:name`);
-      await reloadActivities();
-    } catch (error) {
-      alert(error.message);
-    }
-  }
 
-  async function handleUpdateActivity(activity, patch) {
+      const [updatedDefinitions] = await Promise.all([reloadFinancialPeriods(), reloadPeriods()]);
+      const nextSelection = Array.isArray(updatedDefinitions)
+        ? (updatedDefinitions.find((item) => !item.has_snapshot)?.id || '')
+        : '';
+
+      if (nextSelection) {
+        setSelectedFinancialPeriodId(nextSelection);
+        setPreferredFinancialPeriodId(activeProject.id, nextSelection);
+        setSnapshotDate(getInitialSnapshotDate(updatedDefinitions, nextSelection));
+      }
+
+      setSnapshotNotes('');
+      setPageSuccess('Periodo financiero guardado correctamente desde Actividades.');
+    } catch (error) {
+      setPageError(getErrorMessage(error, 'No se pudo guardar el periodo financiero.'));
+    } finally {
+      setCaptureBusy(false);
+    }
+  }, [
+    activeProject?.id,
+    reloadFinancialPeriods,
+    reloadPeriods,
+    selectedFinancialPeriod,
+    selectedFinancialPeriodId,
+    snapshotDate,
+    snapshotNotes,
+  ]);
+
+  const handleAddActivity = useCallback(async (wbsNode) => {
     try {
-      await activitiesApi.update(activity.id, patch);
+      const created = await runActivityMutation(() =>
+        activitiesApi.create({
+          wbs_id: wbsNode.id,
+          name: 'Nueva actividad',
+          status_code: 'not_started',
+          activity_type_code: 'task',
+          priority_code: 'medium',
+          discipline_code: 'general',
+          progress: 0,
+          hours: 0,
+          cost: 0,
+        }),
+      );
+      if (created?.id) setRequestedCellId(`${created.id}:name`);
       await reloadActivities();
-    } catch (error) {
-      alert(error.message);
+    } catch {
+      // Error manejado arriba.
     }
-  }
+  }, [reloadActivities, runActivityMutation]);
 
-  async function handleDeleteActivity(activity) {
-    const confirmed = confirm(`¿Eliminar actividad "${activity.name}"?`);
-    if (!confirmed) return;
+  const handleUpdateActivity = useCallback(async (activity, patch) => {
+    try {
+      await runActivityMutation(() => activitiesApi.update(activity.id, patch));
+      await reloadActivities();
+    } catch {
+      // Error manejado arriba.
+    }
+  }, [reloadActivities, runActivityMutation]);
+
+  const handleDeleteActivity = useCallback(async (activity) => {
+    if (!window.confirm(`¿Eliminar actividad "${activity.name}"?`)) return;
 
     try {
-      await activitiesApi.remove(activity.id);
+      await runActivityMutation(() => activitiesApi.remove(activity.id));
       await reloadActivities();
-    } catch (error) {
-      alert(error.message);
+    } catch {
+      // Error manejado arriba.
     }
+  }, [reloadActivities, runActivityMutation]);
+
+  if (!activeProject?.id) {
+    return (
+      <SectionCard title="Actividades" description="Selecciona un proyecto para trabajar sobre sus actividades.">
+        <div className="rounded-xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">
+          No hay un proyecto activo seleccionado.
+        </div>
+      </SectionCard>
+    );
   }
+
+  const captureHelper = !selectedFinancialPeriod
+    ? ''
+    : selectedFinancialPeriod.has_snapshot
+      ? 'Este periodo ya tiene snapshot. Puedes volver a guardarlo si necesitas refrescarlo, pero normalmente conviene escoger el siguiente periodo disponible.'
+      : 'Se guardará el avance acumulado y el EV monetario del proyecto activo para este periodo.';
 
   return (
-    <SectionCard title={`Actividades · ${activeProject.name}`}>
-      {baselineMeta ? (
-        <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
-          Línea Base visible: <strong>{baselineMeta.name}</strong>
-        </div>
-      ) : baselineLoading ? (
-        <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-          Cargando línea base...
-        </div>
-      ) : baselineError ? (
-        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          {baselineError}
-        </div>
-      ) : (
-        <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-          Este proyecto no tiene línea base registrada.
-        </div>
-      )}
+    <div className="space-y-4">
+      <BaselineBanner latestBaseline={latestBaseline} baselineLoading={baselinesLoading || baselineDetailLoading} baselineError={baselinesError} />
 
-      <DataTable
-        rows={rows}
-        onAddActivity={handleAddActivity}
-        onUpdateActivity={handleUpdateActivity}
-        onDeleteActivity={handleDeleteActivity}
-        requestedCellId={requestedCellId}
-        onRequestedCellHandled={handleRequestedCellHandled}
-        columnSettingsKey={activeProject?.id ? `activities-columns:${activeProject.id}` : 'activities-columns'}
+      {pageError ? <InlineAlert tone="warning">{pageError}</InlineAlert> : null}
+      {pageSuccess ? <InlineAlert tone="success">{pageSuccess}</InlineAlert> : null}
+
+      <FinancialPeriodContext
+        activeProjectId={activeProject.id}
+        financialPeriods={financialPeriods}
+        loading={definitionsLoading}
+        definitionsError={definitionsError}
+        selectedId={selectedFinancialPeriodId}
+        onChange={handleFinancialPeriodChange}
+        snapshotDate={snapshotDate}
+        onSnapshotDateChange={setSnapshotDate}
+        closeNotes={snapshotNotes}
+        onCloseNotesChange={setSnapshotNotes}
+        onCapture={handleCaptureFinancialPeriod}
+        captureBusy={captureBusy}
+        captureDisabled={!selectedFinancialPeriodId || captureBusy}
+        captureHelper={captureHelper}
       />
-    </SectionCard>
+
+      <SectionCard title="Registro de actividades" description="Actualiza el avance acumulado, las fechas y el presupuesto operativo de cada actividad.">
+        {catalogError ? <InlineAlert tone="warning" className="mb-3">{catalogError}</InlineAlert> : null}
+
+        <DataTable
+          rows={rows}
+          requestedCellId={requestedCellId}
+          onRequestedCellHandled={handleRequestedCellHandled}
+          onAddActivity={handleAddActivity}
+          onUpdateActivity={handleUpdateActivity}
+          onDeleteActivity={handleDeleteActivity}
+          columnSettingsKey={columnSettingsKey}
+          statusOptions={catalogOptions.statuses}
+          activityTypeOptions={catalogOptions.activityTypes}
+          priorityOptions={catalogOptions.priorities}
+          disciplineOptions={catalogOptions.disciplines}
+        />
+      </SectionCard>
+    </div>
   );
 }

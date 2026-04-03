@@ -1,14 +1,43 @@
 import { pool } from '../../config/db.js';
 
+function normalizeDateValue(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    return value.toISOString().slice(0, 10);
+  }
+
+  const normalized = String(value).trim();
+  if (!normalized) return null;
+  const match = normalized.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : normalized;
+}
+
 function mapBaseline(row) {
   if (!row) return null;
-
   return {
     ...row,
+    source_project_created_at: row.source_project_created_at || null,
+    created_at: row.created_at || null,
+    updated_at: row.updated_at || null,
     wbs_count: Number(row.wbs_count || 0),
     activities_count: Number(row.activities_count || 0),
     created_by: row.created_by || null,
     updated_by: row.updated_by || null,
+  };
+}
+
+function mapBaselineActivity(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    start_date: normalizeDateValue(row.start_date),
+    end_date: normalizeDateValue(row.end_date),
+    duration: Number(row.duration || 0),
+    progress: Number(row.progress || 0),
+    hours: Number(row.hours || 0),
+    cost: Number(row.cost || 0),
+    sort_order: Number(row.sort_order || 0),
   };
 }
 
@@ -20,17 +49,15 @@ export const baselinesRepository = {
         FROM projects
         WHERE id = $1
       `,
-      [projectId]
+      [projectId],
     );
-
     return result.rows[0] || null;
   },
 
   async findBaselineById(baselineId, executor = pool) {
     const result = await executor.query(
       `
-        SELECT
-          pb.*,
+        SELECT pb.*,
           (
             SELECT COUNT(*)
             FROM baseline_wbs bw
@@ -44,9 +71,32 @@ export const baselinesRepository = {
         FROM project_baselines pb
         WHERE pb.id = $1
       `,
-      [baselineId]
+      [baselineId],
     );
+    return mapBaseline(result.rows[0]);
+  },
 
+  async findLatestByProject(projectId, executor = pool) {
+    const result = await executor.query(
+      `
+        SELECT pb.*,
+          (
+            SELECT COUNT(*)
+            FROM baseline_wbs bw
+            WHERE bw.baseline_id = pb.id
+          ) AS wbs_count,
+          (
+            SELECT COUNT(*)
+            FROM baseline_activities ba
+            WHERE ba.baseline_id = pb.id
+          ) AS activities_count
+        FROM project_baselines pb
+        WHERE pb.project_id = $1
+        ORDER BY pb.created_at DESC, LOWER(pb.name) ASC
+        LIMIT 1
+      `,
+      [projectId],
+    );
     return mapBaseline(result.rows[0]);
   },
 
@@ -58,17 +108,15 @@ export const baselinesRepository = {
         WHERE project_id = $1
           AND name = $2
       `,
-      [projectId, name]
+      [projectId, name],
     );
-
     return result.rows[0] || null;
   },
 
   async listByProject(projectId, executor = pool) {
     const result = await executor.query(
       `
-        SELECT
-          pb.*,
+        SELECT pb.*,
           (
             SELECT COUNT(*)
             FROM baseline_wbs bw
@@ -83,9 +131,8 @@ export const baselinesRepository = {
         WHERE pb.project_id = $1
         ORDER BY pb.created_at DESC, LOWER(pb.name) ASC
       `,
-      [projectId]
+      [projectId],
     );
-
     return result.rows.map(mapBaseline);
   },
 
@@ -97,9 +144,8 @@ export const baselinesRepository = {
         WHERE project_id = $1
         ORDER BY code ASC, sort_order ASC, name ASC
       `,
-      [projectId]
+      [projectId],
     );
-
     return result.rows;
   },
 
@@ -129,10 +175,9 @@ export const baselinesRepository = {
         WHERE a.project_id = $1
         ORDER BY w.code ASC, a.sort_order ASC, LOWER(a.activity_id) ASC, LOWER(a.name) ASC, a.id ASC
       `,
-      [projectId]
+      [projectId],
     );
-
-    return result.rows;
+    return result.rows.map(mapBaselineActivity);
   },
 
   async createSnapshot(payload, executor = pool) {
@@ -149,18 +194,7 @@ export const baselinesRepository = {
           baseline_type,
           created_by,
           updated_by
-        ) VALUES (
-          $1,
-          $2,
-          $3,
-          $4,
-          $5,
-          $6,
-          $7,
-          $8,
-          $9,
-          $10
-        )
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
         RETURNING id
       `,
       [
@@ -174,7 +208,7 @@ export const baselinesRepository = {
         payload.baseline.baseline_type,
         payload.baseline.created_by || null,
         payload.baseline.updated_by || null,
-      ]
+      ],
     );
 
     const baselineId = baselineInsert.rows[0].id;
@@ -190,12 +224,11 @@ export const baselinesRepository = {
             name,
             code,
             sort_order
-          ) VALUES ($1, $2, NULL, $3, $4, $5)
+          ) VALUES ($1,$2,NULL,$3,$4,$5)
           RETURNING id
         `,
-        [baselineId, row.source_wbs_id, row.name, row.code, row.sort_order]
+        [baselineId, row.source_wbs_id, row.name, row.code, row.sort_order],
       );
-
       baselineWbsIdBySourceId.set(row.source_wbs_id, inserted.rows[0].id);
     }
 
@@ -211,13 +244,12 @@ export const baselinesRepository = {
           SET parent_id = $2
           WHERE id = $1
         `,
-        [baselineWbsId, baselineParentId]
+        [baselineWbsId, baselineParentId],
       );
     }
 
     for (const row of payload.baselineActivities) {
       const baselineWbsId = baselineWbsIdBySourceId.get(row.source_wbs_id);
-
       await executor.query(
         `
           INSERT INTO baseline_activities (
@@ -238,25 +270,7 @@ export const baselinesRepository = {
             source_created_at,
             source_updated_at,
             created_at
-          ) VALUES (
-            $1,
-            $2,
-            $3,
-            $4,
-            $5,
-            $6,
-            $7,
-            $8,
-            $9,
-            $10,
-            $11,
-            $12,
-            $13,
-            $14,
-            $15,
-            $16,
-            $17
-          )
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
         `,
         [
           baselineId,
@@ -276,7 +290,7 @@ export const baselinesRepository = {
           row.source_created_at,
           row.source_updated_at,
           row.created_at,
-        ]
+        ],
       );
     }
 
@@ -290,9 +304,8 @@ export const baselinesRepository = {
         FROM project_baselines
         WHERE id = $1
       `,
-      [baselineId]
+      [baselineId],
     );
-
     return result.rows[0] || null;
   },
 
@@ -304,10 +317,9 @@ export const baselinesRepository = {
         WHERE baseline_id = $1
         ORDER BY code ASC, sort_order ASC, name ASC
       `,
-      [baselineId]
+      [baselineId],
     );
-
-    return result.rows;
+    return result.rows.map((row) => ({ ...row, sort_order: Number(row.sort_order || 0) }));
   },
 
   async getBaselineActivities(baselineId, executor = pool) {
@@ -338,10 +350,9 @@ export const baselinesRepository = {
         WHERE ba.baseline_id = $1
         ORDER BY bw.code ASC, ba.sort_order ASC, LOWER(ba.activity_id) ASC, LOWER(ba.name) ASC, ba.id ASC
       `,
-      [baselineId]
+      [baselineId],
     );
-
-    return result.rows;
+    return result.rows.map(mapBaselineActivity);
   },
 
   async removeBaseline(baselineId, executor = pool) {
@@ -350,7 +361,7 @@ export const baselinesRepository = {
         DELETE FROM project_baselines
         WHERE id = $1
       `,
-      [baselineId]
+      [baselineId],
     );
   },
 };

@@ -14,8 +14,23 @@ function normalizeDateValue(value) {
   return match ? match[1] : normalized;
 }
 
+function toNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function mapActivity(row) {
   if (!row) return null;
+
+  const progress = toNumber(row.progress ?? row.progress_percent ?? 0);
+  const budgetHours = toNumber(row.hours ?? row.budget_hours ?? 0);
+  const budgetCost = toNumber(row.cost ?? row.budget_cost ?? 0);
+  const actualHours = toNumber(row.actual_hours ?? 0);
+  const actualCost = toNumber(row.actual_cost ?? 0);
+  const baselineHours = toNumber(row.baseline_hours ?? row.baseline_budget_hours ?? 0);
+  const baselineCost = toNumber(row.baseline_cost ?? row.baseline_budget_cost ?? 0);
+  const baselineDuration = toNumber(row.baseline_duration ?? row.baseline_duration_days ?? 0);
+  const evAmount = baselineCost > 0 ? Number(((progress * baselineCost) / 100).toFixed(2)) : 0;
 
   return {
     id: row.id,
@@ -25,10 +40,10 @@ function mapActivity(row) {
     name: row.name,
     start_date: normalizeDateValue(row.start_date),
     end_date: normalizeDateValue(row.end_date || row.finish_date),
-    duration: Number(row.duration ?? row.duration_days ?? 0),
-    progress: Number(row.progress ?? row.progress_percent ?? 0),
-    hours: Number(row.hours ?? row.budget_hours ?? 0),
-    cost: Number(row.cost ?? row.budget_cost ?? 0),
+    duration: toNumber(row.duration ?? row.duration_days ?? 0),
+    progress,
+    hours: budgetHours,
+    cost: budgetCost,
     status_code: row.status_code || row.status || 'not_started',
     status_name: row.status_name || null,
     status: row.status_name || row.status || 'Not Started',
@@ -36,6 +51,8 @@ function mapActivity(row) {
     activity_type_name: row.activity_type_name || null,
     priority_code: row.priority_code || 'medium',
     priority_name: row.priority_name || null,
+    discipline_code: row.discipline_code || 'general',
+    discipline_name: row.discipline_name || null,
     sort_order: Number(row.sort_order || 0),
     notes: row.notes || '',
     wbs_name: row.wbs_name || null,
@@ -44,6 +61,33 @@ function mapActivity(row) {
     updated_by: row.updated_by || null,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    progress_update_count: Number(row.progress_update_count || 0),
+    latest_progress_date: normalizeDateValue(row.latest_progress_date),
+    actual_entry_count: Number(row.actual_entry_count || 0),
+    actual_hours: actualHours,
+    actual_cost: actualCost,
+    latest_actual_date: normalizeDateValue(row.latest_actual_date),
+    remaining_hours: Number(Math.max(budgetHours - actualHours, 0).toFixed(2)),
+    remaining_cost: Number(Math.max(budgetCost - actualCost, 0).toFixed(2)),
+    baseline_id: row.baseline_id || null,
+    baseline_name: row.baseline_name || null,
+    baseline: row.baseline_id || row.baseline_name || baselineCost > 0 || baselineHours > 0
+      ? {
+          id: row.baseline_id || null,
+          name: row.baseline_name || null,
+          start_date: normalizeDateValue(row.baseline_start_date),
+          end_date: normalizeDateValue(row.baseline_end_date),
+          duration: baselineDuration,
+          progress: toNumber(row.baseline_progress ?? 0),
+          hours: baselineHours,
+          cost: baselineCost,
+          status_code: row.baseline_status_code || null,
+          status: row.baseline_status_code || null,
+        }
+      : null,
+    ev_amount: evAmount,
+    baseline_budget_hours: baselineHours,
+    baseline_budget_cost: baselineCost,
   };
 }
 
@@ -65,12 +109,29 @@ const ACTIVITY_SELECT_COLUMNS = `
   t.name AS activity_type_name,
   a.priority_code,
   p.name AS priority_name,
+  a.discipline_code,
+  d.name AS discipline_name,
   a.sort_order,
   a.notes,
   a.created_by,
   a.updated_by,
   a.created_at,
-  a.updated_at
+  a.updated_at,
+  COALESCE(pu.progress_update_count, 0) AS progress_update_count,
+  pu.latest_progress_date,
+  COALESCE(ac.actual_entry_count, 0) AS actual_entry_count,
+  COALESCE(ac.actual_hours, 0) AS actual_hours,
+  COALESCE(ac.actual_cost, 0) AS actual_cost,
+  ac.latest_actual_date,
+  lb.baseline_id,
+  lb.baseline_name,
+  lb.baseline_start_date,
+  lb.baseline_end_date,
+  lb.baseline_duration,
+  lb.baseline_progress,
+  lb.baseline_hours,
+  lb.baseline_cost,
+  lb.baseline_status_code
 `;
 
 const ACTIVITY_BASE_JOINS = `
@@ -79,6 +140,41 @@ const ACTIVITY_BASE_JOINS = `
   LEFT JOIN activity_statuses s ON s.code = a.status
   LEFT JOIN activity_types t ON t.code = a.activity_type_code
   LEFT JOIN activity_priorities p ON p.code = a.priority_code
+  LEFT JOIN disciplines d ON d.code = a.discipline_code
+  LEFT JOIN LATERAL (
+    SELECT
+      COUNT(*)::int AS progress_update_count,
+      MAX(update_date) AS latest_progress_date
+    FROM activity_progress_updates apu
+    WHERE apu.activity_id = a.id
+  ) pu ON TRUE
+  LEFT JOIN LATERAL (
+    SELECT
+      COUNT(*)::int AS actual_entry_count,
+      COALESCE(SUM(actual_hours), 0) AS actual_hours,
+      COALESCE(SUM(actual_cost), 0) AS actual_cost,
+      MAX(actual_date) AS latest_actual_date
+    FROM activity_actuals aa
+    WHERE aa.activity_id = a.id
+  ) ac ON TRUE
+  LEFT JOIN LATERAL (
+    SELECT
+      pb.id AS baseline_id,
+      pb.name AS baseline_name,
+      ba.start_date AS baseline_start_date,
+      ba.end_date AS baseline_end_date,
+      ba.duration AS baseline_duration,
+      ba.progress AS baseline_progress,
+      ba.hours AS baseline_hours,
+      ba.cost AS baseline_cost,
+      ba.status AS baseline_status_code
+    FROM project_baselines pb
+    INNER JOIN baseline_activities ba ON ba.baseline_id = pb.id
+    WHERE pb.project_id = COALESCE(w.project_id, a.project_id)
+      AND (ba.source_activity_id = a.id OR LOWER(ba.activity_id) = LOWER(a.activity_id))
+    ORDER BY pb.created_at DESC, LOWER(pb.name) ASC
+    LIMIT 1
+  ) lb ON TRUE
 `;
 
 export const activitiesRepository = {
@@ -89,7 +185,7 @@ export const activitiesRepository = {
         FROM wbs_nodes
         WHERE id = $1
       `,
-      [wbsId]
+      [wbsId],
     );
 
     return result.rows[0] || null;
@@ -107,7 +203,7 @@ export const activitiesRepository = {
         WHERE COALESCE(w.project_id, a.project_id) = $1
         ORDER BY a.id, w.code ASC NULLS LAST, a.sort_order ASC, LOWER(a.activity_id) ASC, LOWER(a.name) ASC
       `,
-      [projectId]
+      [projectId],
     );
 
     return result.rows.map(mapActivity);
@@ -123,7 +219,7 @@ export const activitiesRepository = {
         ${ACTIVITY_BASE_JOINS}
         WHERE a.id = $1
       `,
-      [id]
+      [id],
     );
 
     return mapActivity(result.rows[0]);
@@ -143,7 +239,7 @@ export const activitiesRepository = {
           AND a.activity_id = $2
           ${clause}
       `,
-      params
+      params,
     );
 
     return mapActivity(result.rows[0]);
@@ -156,7 +252,7 @@ export const activitiesRepository = {
         FROM activities
         WHERE wbs_id = $1
       `,
-      [wbsId]
+      [wbsId],
     );
 
     return Number(result.rows[0]?.value || 0);
@@ -170,7 +266,7 @@ export const activitiesRepository = {
         LEFT JOIN wbs_nodes w ON w.id = a.wbs_id
         WHERE COALESCE(w.project_id, a.project_id) = $1
       `,
-      [projectId]
+      [projectId],
     );
 
     return result.rows;
@@ -187,7 +283,7 @@ export const activitiesRepository = {
         WHERE a.wbs_id = $1
         ORDER BY a.sort_order ASC, LOWER(a.activity_id) ASC, LOWER(a.name) ASC, a.id ASC
       `,
-      [wbsId]
+      [wbsId],
     );
 
     return result.rows.map(mapActivity);
@@ -210,28 +306,13 @@ export const activitiesRepository = {
           status,
           activity_type_code,
           priority_code,
+          discipline_code,
           sort_order,
           notes,
           created_by,
           updated_by
         ) VALUES (
-          $1,
-          $2,
-          $3,
-          $4,
-          $5,
-          $6,
-          $7,
-          $8,
-          $9,
-          $10,
-          $11,
-          $12,
-          $13,
-          $14,
-          $15,
-          $16,
-          $17
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18
         )
         RETURNING id
       `,
@@ -249,11 +330,12 @@ export const activitiesRepository = {
         activity.status_code,
         activity.activity_type_code,
         activity.priority_code,
+        activity.discipline_code,
         activity.sort_order,
         activity.notes || '',
         activity.created_by || null,
         activity.updated_by || null,
-      ]
+      ],
     );
 
     return this.findById(result.rows[0].id, executor);
@@ -277,9 +359,10 @@ export const activitiesRepository = {
           status = $12,
           activity_type_code = $13,
           priority_code = $14,
-          sort_order = $15,
-          notes = $16,
-          updated_by = $17,
+          discipline_code = $15,
+          sort_order = $16,
+          notes = $17,
+          updated_by = $18,
           updated_at = NOW()
         WHERE id = $1
         RETURNING id
@@ -299,10 +382,11 @@ export const activitiesRepository = {
         activity.status_code,
         activity.activity_type_code,
         activity.priority_code,
+        activity.discipline_code,
         activity.sort_order,
         activity.notes || '',
         activity.updated_by || null,
-      ]
+      ],
     );
 
     return this.findById(result.rows[0]?.id || id, executor);
@@ -312,13 +396,168 @@ export const activitiesRepository = {
     await executor.query(
       `
         UPDATE activities
-        SET
-          sort_order = $2,
-          updated_by = $3,
-          updated_at = NOW()
+        SET sort_order = $2,
+            updated_by = $3,
+            updated_at = NOW()
         WHERE id = $1
       `,
-      [id, sortOrder, actorId || null]
+      [id, sortOrder, actorId || null],
+    );
+  },
+
+  async listProgressUpdates(activityId, executor = pool) {
+    const result = await executor.query(
+      `
+        SELECT
+          apu.id,
+          apu.activity_id,
+          apu.project_id,
+          apu.update_date,
+          apu.progress_percent,
+          apu.status_code,
+          s.name AS status_name,
+          apu.notes,
+          apu.source_type,
+          apu.created_by,
+          apu.created_at
+        FROM activity_progress_updates apu
+        LEFT JOIN activity_statuses s ON s.code = apu.status_code
+        WHERE apu.activity_id = $1
+        ORDER BY apu.update_date DESC, apu.created_at DESC
+      `,
+      [activityId],
+    );
+
+    return result.rows.map((row) => ({
+      ...row,
+      update_date: normalizeDateValue(row.update_date),
+      progress_percent: toNumber(row.progress_percent, 0),
+    }));
+  },
+
+  async insertProgressUpdate(entry, executor = pool) {
+    const result = await executor.query(
+      `
+        INSERT INTO activity_progress_updates (
+          activity_id,
+          project_id,
+          update_date,
+          progress_percent,
+          status_code,
+          notes,
+          source_type,
+          created_by
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        RETURNING id, activity_id, project_id, update_date, progress_percent, status_code, notes, source_type, created_by, created_at
+      `,
+      [
+        entry.activity_id,
+        entry.project_id,
+        entry.update_date,
+        entry.progress_percent,
+        entry.status_code,
+        entry.notes || '',
+        entry.source_type || 'manual',
+        entry.created_by || null,
+      ],
+    );
+
+    const row = result.rows[0];
+    return {
+      ...row,
+      update_date: normalizeDateValue(row.update_date),
+      progress_percent: toNumber(row.progress_percent, 0),
+    };
+  },
+
+  async updateProgressSummary(activityId, patch, executor = pool) {
+    await executor.query(
+      `
+        UPDATE activities
+        SET progress_percent = $2,
+            status = $3,
+            updated_by = $4,
+            updated_at = NOW()
+        WHERE id = $1
+      `,
+      [activityId, patch.progress, patch.status_code, patch.updated_by || null],
+    );
+  },
+
+  async listActualEntries(activityId, executor = pool) {
+    const result = await executor.query(
+      `
+        SELECT
+          id,
+          activity_id,
+          project_id,
+          actual_date,
+          actual_hours,
+          actual_cost,
+          notes,
+          source_type,
+          created_by,
+          created_at
+        FROM activity_actuals
+        WHERE activity_id = $1
+        ORDER BY actual_date DESC, created_at DESC
+      `,
+      [activityId],
+    );
+
+    return result.rows.map((row) => ({
+      ...row,
+      actual_date: normalizeDateValue(row.actual_date),
+      actual_hours: toNumber(row.actual_hours, 0),
+      actual_cost: toNumber(row.actual_cost, 0),
+    }));
+  },
+
+  async insertActualEntry(entry, executor = pool) {
+    const result = await executor.query(
+      `
+        INSERT INTO activity_actuals (
+          activity_id,
+          project_id,
+          actual_date,
+          actual_hours,
+          actual_cost,
+          notes,
+          source_type,
+          created_by
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        RETURNING id, activity_id, project_id, actual_date, actual_hours, actual_cost, notes, source_type, created_by, created_at
+      `,
+      [
+        entry.activity_id,
+        entry.project_id,
+        entry.actual_date,
+        entry.actual_hours,
+        entry.actual_cost,
+        entry.notes || '',
+        entry.source_type || 'manual',
+        entry.created_by || null,
+      ],
+    );
+
+    const row = result.rows[0];
+    return {
+      ...row,
+      actual_date: normalizeDateValue(row.actual_date),
+      actual_hours: toNumber(row.actual_hours, 0),
+      actual_cost: toNumber(row.actual_cost, 0),
+    };
+  },
+
+  async touchActivity(activityId, actorId, executor = pool) {
+    await executor.query(
+      `
+        UPDATE activities
+        SET updated_by = $2,
+            updated_at = NOW()
+        WHERE id = $1
+      `,
+      [activityId, actorId || null],
     );
   },
 
@@ -328,7 +567,7 @@ export const activitiesRepository = {
         DELETE FROM activities
         WHERE id = $1
       `,
-      [id]
+      [id],
     );
   },
 };

@@ -1,41 +1,27 @@
-
 import { useEffect, useMemo, useRef, useState } from 'react';
 import EditableCell from './EditableCell';
 import ColumnSelectorModal from './ColumnSelectorModal';
 
-const STATUS_OPTIONS = ['Not Started', 'In Progress', 'Completed', 'On Hold'];
 const FIXED_COLUMN_KEYS = ['code', 'name'];
 const DEFAULT_SORT = { key: 'code', direction: 'asc' };
 
 const FIXED_COLUMNS = [
-  {
-    key: 'code',
-    label: 'Código',
-    width: '140px',
-    sortable: true,
-    fixed: true,
-    mandatory: true,
-    configurable: false,
-  },
-  {
-    key: 'name',
-    label: 'Actividad',
-    width: 'minmax(340px, 2.8fr)',
-    sortable: true,
-    fixed: true,
-    mandatory: true,
-    configurable: false,
-  },
+  { key: 'code', label: 'Código', width: '140px', sortable: true, fixed: true, mandatory: true, configurable: false },
+  { key: 'name', label: 'Actividad', width: 'minmax(320px, 2.6fr)', sortable: true, fixed: true, mandatory: true, configurable: false },
 ];
 
 const OPERATIVE_COLUMNS = [
+  { key: 'discipline_code', label: 'Disciplina', width: '150px', sortable: true, configurable: true, group: 'Operativas' },
+  { key: 'activity_type_code', label: 'Tipo', width: '140px', sortable: true, configurable: true, group: 'Operativas' },
+  { key: 'priority_code', label: 'Prioridad', width: '140px', sortable: true, configurable: true, group: 'Operativas' },
   { key: 'start_date', label: 'Inicio', width: '132px', sortable: true, configurable: true, group: 'Operativas' },
   { key: 'end_date', label: 'Fin', width: '132px', sortable: true, configurable: true, group: 'Operativas' },
   { key: 'duration', label: 'Duración', width: '104px', sortable: true, readOnly: true, configurable: true, group: 'Operativas' },
   { key: 'progress', label: 'Progreso %', width: '116px', sortable: true, configurable: true, group: 'Operativas' },
   { key: 'hours', label: 'HH', width: '96px', sortable: true, configurable: true, group: 'Operativas' },
-  { key: 'cost', label: 'Costo USD', width: '128px', sortable: true, configurable: true, group: 'Operativas' },
-  { key: 'status', label: 'Estado', width: '150px', sortable: true, configurable: true, group: 'Operativas' },
+  { key: 'cost', label: 'Costo', width: '128px', sortable: true, configurable: true, group: 'Operativas' },
+  { key: 'ev_amount', label: 'EV', width: '128px', sortable: true, readOnly: true, configurable: true, group: 'Operativas' },
+  { key: 'status_code', label: 'Estado', width: '150px', sortable: true, configurable: true, group: 'Operativas' },
 ];
 
 const BASELINE_COLUMNS = [
@@ -44,22 +30,27 @@ const BASELINE_COLUMNS = [
   { key: 'lb_duration', label: 'LB Duración', width: '110px', sortable: false, readOnly: true, configurable: true, group: 'Línea Base' },
   { key: 'lb_progress', label: 'LB Progreso %', width: '124px', sortable: false, readOnly: true, configurable: true, group: 'Línea Base' },
   { key: 'lb_hours', label: 'LB HH', width: '96px', sortable: false, readOnly: true, configurable: true, group: 'Línea Base' },
-  { key: 'lb_cost', label: 'LB Costo USD', width: '132px', sortable: false, readOnly: true, configurable: true, group: 'Línea Base' },
+  { key: 'lb_cost', label: 'LB Costo', width: '132px', sortable: false, readOnly: true, configurable: true, group: 'Línea Base' },
   { key: 'lb_status', label: 'LB Estado', width: '150px', sortable: false, readOnly: true, configurable: true, group: 'Línea Base' },
 ];
 
 const ALL_COLUMNS = [...FIXED_COLUMNS, ...OPERATIVE_COLUMNS, ...BASELINE_COLUMNS];
 const COLUMN_MAP = new Map(ALL_COLUMNS.map((column) => [column.key, column]));
-
 const OPERATIVE_COLUMN_KEYS = OPERATIVE_COLUMNS.map((column) => column.key);
 const BASELINE_COLUMN_KEYS = BASELINE_COLUMNS.map((column) => column.key);
 const CONFIGURABLE_COLUMN_KEYS = [...OPERATIVE_COLUMN_KEYS, ...BASELINE_COLUMN_KEYS];
 const DEFAULT_VISIBLE_KEYS = [...FIXED_COLUMN_KEYS, ...OPERATIVE_COLUMN_KEYS];
+const DEFAULT_COLUMN_SETTINGS = { visibleKeys: DEFAULT_VISIBLE_KEYS, order: CONFIGURABLE_COLUMN_KEYS };
 
-const DEFAULT_COLUMN_SETTINGS = {
-  visibleKeys: DEFAULT_VISIBLE_KEYS,
-  order: CONFIGURABLE_COLUMN_KEYS,
-};
+function buildOptionMap(options = []) {
+  const map = new Map();
+  (options || []).forEach((item) => {
+    const value = typeof item === 'string' ? item : item?.value ?? item?.code;
+    const label = typeof item === 'string' ? item : item?.label ?? item?.name ?? item?.code;
+    if (value) map.set(String(value), label || value);
+  });
+  return map;
+}
 
 function compareValues(a, b, direction = 'asc') {
   const left = a ?? '';
@@ -68,23 +59,10 @@ function compareValues(a, b, direction = 'asc') {
 
   const leftNumber = Number(left);
   const rightNumber = Number(right);
+  const isNumeric = Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && String(left).trim() !== '' && String(right).trim() !== '';
+  if (isNumeric) return (leftNumber - rightNumber) * factor;
 
-  const isNumeric =
-    Number.isFinite(leftNumber) &&
-    Number.isFinite(rightNumber) &&
-    String(left).trim() !== '' &&
-    String(right).trim() !== '';
-
-  if (isNumeric) {
-    return (leftNumber - rightNumber) * factor;
-  }
-
-  return (
-    String(left).localeCompare(String(right), 'es', {
-      numeric: true,
-      sensitivity: 'base',
-    }) * factor
-  );
+  return String(left).localeCompare(String(right), 'es', { numeric: true, sensitivity: 'base' }) * factor;
 }
 
 function buildActivityCellId(rowId, columnKey) {
@@ -94,27 +72,15 @@ function buildActivityCellId(rowId, columnKey) {
 function sanitizeColumnSettings(parsed) {
   const parsedOrder = Array.isArray(parsed?.order) ? parsed.order : [];
   const parsedVisibleKeys = Array.isArray(parsed?.visibleKeys) ? parsed.visibleKeys : [];
-
   const cleanedOrder = parsedOrder.filter((key) => CONFIGURABLE_COLUMN_KEYS.includes(key));
-  const order = cleanedOrder.length
-    ? [...cleanedOrder, ...CONFIGURABLE_COLUMN_KEYS.filter((key) => !cleanedOrder.includes(key))]
-    : DEFAULT_COLUMN_SETTINGS.order;
-
-  const cleanedVisibleConfigurable = parsedVisibleKeys.filter((key) =>
-    CONFIGURABLE_COLUMN_KEYS.includes(key)
-  );
-
+  const order = cleanedOrder.length ? [...cleanedOrder, ...CONFIGURABLE_COLUMN_KEYS.filter((key) => !cleanedOrder.includes(key))] : DEFAULT_COLUMN_SETTINGS.order;
+  const cleanedVisibleConfigurable = parsedVisibleKeys.filter((key) => CONFIGURABLE_COLUMN_KEYS.includes(key));
   const visibleKeys = [...FIXED_COLUMN_KEYS, ...cleanedVisibleConfigurable];
-
-  return {
-    order,
-    visibleKeys: visibleKeys.length ? visibleKeys : DEFAULT_COLUMN_SETTINGS.visibleKeys,
-  };
+  return { order, visibleKeys: visibleKeys.length ? visibleKeys : DEFAULT_COLUMN_SETTINGS.visibleKeys };
 }
 
 function readColumnSettings(storageKey) {
   if (!storageKey || typeof window === 'undefined') return DEFAULT_COLUMN_SETTINGS;
-
   try {
     const raw = window.localStorage.getItem(storageKey);
     if (!raw) return DEFAULT_COLUMN_SETTINGS;
@@ -130,20 +96,14 @@ function persistColumnSettings(storageKey, settings) {
 }
 
 function getVisibleColumns(columnSettings) {
-  const middleColumns = columnSettings.order
-    .map((key) => COLUMN_MAP.get(key))
-    .filter(Boolean)
-    .filter((column) => columnSettings.visibleKeys.includes(column.key));
-
+  const middleColumns = columnSettings.order.map((key) => COLUMN_MAP.get(key)).filter(Boolean).filter((column) => columnSettings.visibleKeys.includes(column.key));
   return [COLUMN_MAP.get('code'), COLUMN_MAP.get('name'), ...middleColumns];
 }
 
 function normalizeDateValue(value) {
   if (value === null || value === undefined || value === '') return null;
-
   const normalized = String(value).trim();
   if (!normalized) return null;
-
   const match = normalized.match(/^(\d{4}-\d{2}-\d{2})/);
   return match ? match[1] : normalized;
 }
@@ -151,27 +111,19 @@ function normalizeDateValue(value) {
 function formatDate(value) {
   const normalized = normalizeDateValue(value);
   if (!normalized) return '—';
-
   const [year, month, day] = normalized.split('-');
   if (!year || !month || !day) return normalized;
-
   return `${day}/${month}/${year}`;
 }
 
 function formatNumber(value, digits = 2) {
   const numericValue = Number(value || 0);
-  return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: digits,
-  }).format(numericValue);
+  return new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: digits }).format(numericValue);
 }
 
 function formatCurrency(value) {
   const numericValue = Number(value || 0);
-  return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(numericValue);
+  return new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(numericValue);
 }
 
 function formatProgress(value) {
@@ -187,77 +139,29 @@ function getRowCode(row) {
 function getBaselineValue(row, key) {
   const baseline = row?.baseline || {};
   switch (key) {
-    case 'lb_start_date':
-      return baseline.start_date ?? null;
-    case 'lb_end_date':
-      return baseline.end_date ?? null;
-    case 'lb_duration':
-      return baseline.duration ?? null;
-    case 'lb_progress':
-      return baseline.progress ?? null;
-    case 'lb_hours':
-      return baseline.hours ?? null;
-    case 'lb_cost':
-      return baseline.cost ?? null;
-    case 'lb_status':
-      return baseline.status ?? null;
-    default:
-      return null;
+    case 'lb_start_date': return baseline.start_date ?? null;
+    case 'lb_end_date': return baseline.end_date ?? null;
+    case 'lb_duration': return baseline.duration ?? null;
+    case 'lb_progress': return baseline.progress ?? null;
+    case 'lb_hours': return baseline.hours ?? null;
+    case 'lb_cost': return baseline.cost ?? null;
+    case 'lb_status': return baseline.status ?? baseline.status_name ?? null;
+    default: return null;
   }
 }
 
 function PlusIcon({ className = 'h-4 w-4' }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      className={className}
-      aria-hidden="true"
-    >
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
-    </svg>
-  );
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" /></svg>;
 }
 
 function TrashIcon({ className = 'h-4 w-4' }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      className={className}
-      aria-hidden="true"
-    >
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M8 6V4h8v2" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14H6L5 6" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M10 11v6M14 11v6" />
-    </svg>
-  );
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18" /><path strokeLinecap="round" strokeLinejoin="round" d="M8 6V4h8v2" /><path strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14H6L5 6" /><path strokeLinecap="round" strokeLinejoin="round" d="M10 11v6M14 11v6" /></svg>;
 }
 
 function ActionRailButton({ icon, label, onClick, disabled = false, tone = 'default' }) {
-  const toneClass =
-    tone === 'danger'
-      ? 'border-rose-200 bg-white text-rose-700 hover:bg-rose-50'
-      : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50';
-
+  const toneClass = tone === 'danger' ? 'border-rose-200 bg-white text-rose-700 hover:bg-rose-50' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50';
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={label}
-      aria-label={label}
-      className={[
-        'flex h-10 w-10 items-center justify-center rounded-lg border shadow-sm transition',
-        toneClass,
-        disabled ? 'cursor-not-allowed opacity-50 hover:bg-white' : '',
-      ].join(' ')}
-    >
+    <button type="button" onClick={onClick} disabled={disabled} title={label} aria-label={label} className={['flex h-10 w-10 items-center justify-center rounded-lg border shadow-sm transition', toneClass, disabled ? 'cursor-not-allowed opacity-50 hover:bg-white' : ''].join(' ')}>
       {icon}
     </button>
   );
@@ -271,6 +175,10 @@ export default function DataTable({
   requestedCellId,
   onRequestedCellHandled,
   columnSettingsKey,
+  statusOptions = [],
+  activityTypeOptions = [],
+  priorityOptions = [],
+  disciplineOptions = [],
 }) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -280,8 +188,12 @@ export default function DataTable({
   const [showColumnPanel, setShowColumnPanel] = useState(false);
   const [columnSettings, setColumnSettings] = useState(() => readColumnSettings(columnSettingsKey));
   const [selectedRowId, setSelectedRowId] = useState(null);
-
   const cellRefs = useRef(new Map());
+
+  const statusMap = useMemo(() => buildOptionMap(statusOptions), [statusOptions]);
+  const typeMap = useMemo(() => buildOptionMap(activityTypeOptions), [activityTypeOptions]);
+  const priorityMap = useMemo(() => buildOptionMap(priorityOptions), [priorityOptions]);
+  const disciplineMap = useMemo(() => buildOptionMap(disciplineOptions), [disciplineOptions]);
 
   useEffect(() => {
     setColumnSettings(readColumnSettings(columnSettingsKey));
@@ -296,19 +208,14 @@ export default function DataTable({
   const groupedRows = useMemo(() => {
     const groups = [];
     let currentGroup = null;
-
     rows.forEach((row) => {
       if (row.type === 'wbs') {
         currentGroup = { wbs: row, activities: [] };
         groups.push(currentGroup);
         return;
       }
-
-      if (row.type === 'activity' && currentGroup) {
-        currentGroup.activities.push(row);
-      }
+      if (row.type === 'activity' && currentGroup) currentGroup.activities.push(row);
     });
-
     return groups;
   }, [rows]);
 
@@ -319,69 +226,49 @@ export default function DataTable({
     groupedRows.forEach(({ wbs, activities }) => {
       const filteredActivities = activities
         .filter((activity) => {
-          const matchesSearch =
-            !query ||
-            [
-              activity.activity_id,
-              activity.name,
-              activity.status,
-              activity.start_date,
-              activity.end_date,
-              activity.hours,
-              activity.cost,
-            ].some((value) => String(value || '').toLowerCase().includes(query));
+          const searchBlob = [
+            activity.activity_id,
+            activity.name,
+            activity.status_name || statusMap.get(String(activity.status_code || '')) || activity.status_code,
+            activity.activity_type_name || typeMap.get(String(activity.activity_type_code || '')) || activity.activity_type_code,
+            activity.priority_name || priorityMap.get(String(activity.priority_code || '')) || activity.priority_code,
+            activity.discipline_name || disciplineMap.get(String(activity.discipline_code || '')) || activity.discipline_code,
+            activity.start_date,
+            activity.end_date,
+            activity.hours,
+            activity.cost,
+          ].join(' ').toLowerCase();
 
-          const matchesStatus = statusFilter === 'ALL' || activity.status === statusFilter;
+          const matchesSearch = !query || searchBlob.includes(query);
+          const activityStatus = String(activity.status_code || activity.status || '');
+          const matchesStatus = statusFilter === 'ALL' || activityStatus === statusFilter;
           return matchesSearch && matchesStatus;
         })
         .sort((left, right) => {
-          const leftValue = sortConfig.key === 'code' ? getRowCode(left) : left[sortConfig.key];
-          const rightValue = sortConfig.key === 'code' ? getRowCode(right) : right[sortConfig.key];
+          const leftValue = sortConfig.key === 'code' ? getRowCode(left) : (left[sortConfig.key] ?? '');
+          const rightValue = sortConfig.key === 'code' ? getRowCode(right) : (right[sortConfig.key] ?? '');
           return compareValues(leftValue, rightValue, sortConfig.direction);
         });
 
       const matchesWbs = !query || `${wbs.code} ${wbs.name}`.toLowerCase().includes(query);
-
       if (matchesWbs || filteredActivities.length > 0) {
-        output.push({
-          ...wbs,
-          visible_direct_activity_count: filteredActivities.length,
-          total_direct_activity_count: activities.length,
-        });
+        output.push({ ...wbs, visible_direct_activity_count: filteredActivities.length, total_direct_activity_count: activities.length });
         output.push(...filteredActivities);
       }
     });
 
     return output;
-  }, [groupedRows, search, sortConfig, statusFilter]);
+  }, [groupedRows, search, sortConfig, statusFilter, statusMap, typeMap, priorityMap, disciplineMap]);
 
-  const activityRows = useMemo(
-    () => processedRows.filter((row) => row.type === 'activity'),
-    [processedRows]
-  );
-
-  const selectedRow = useMemo(
-    () => processedRows.find((row) => row.id === selectedRowId) || null,
-    [processedRows, selectedRowId]
-  );
-
+  const activityRows = useMemo(() => processedRows.filter((row) => row.type === 'activity'), [processedRows]);
+  const selectedRow = useMemo(() => processedRows.find((row) => row.id === selectedRowId) || null, [processedRows, selectedRowId]);
   const selectedActivity = selectedRow?.type === 'activity' ? selectedRow : null;
 
-  const editableColumnKeys = useMemo(
-    () =>
-      visibleColumns
-        .filter((column) => !column.readOnly)
-        .map((column) => column.key)
-        .filter((key) => !BASELINE_COLUMN_KEYS.includes(key)),
-    [visibleColumns]
-  );
-
+  const editableColumnKeys = useMemo(() => visibleColumns.filter((column) => !column.readOnly).map((column) => column.key).filter((key) => !BASELINE_COLUMN_KEYS.includes(key)), [visibleColumns]);
   const editableCells = useMemo(() => {
     const next = [];
     activityRows.forEach((row) => {
-      editableColumnKeys.forEach((columnKey) => {
-        next.push(buildActivityCellId(row.id, columnKey));
-      });
+      editableColumnKeys.forEach((columnKey) => next.push(buildActivityCellId(row.id, columnKey)));
     });
     return next;
   }, [activityRows, editableColumnKeys]);
@@ -394,16 +281,13 @@ export default function DataTable({
   }
 
   function registerCellRef(cellId) {
-    if (!cellRefs.current.has(cellId)) {
-      cellRefs.current.set(cellId, { current: null });
-    }
+    if (!cellRefs.current.has(cellId)) cellRefs.current.set(cellId, { current: null });
     return cellRefs.current.get(cellId);
   }
 
   function focusCellById(cellId, shouldStartEditing = false) {
     setActiveCell(cellId);
     if (shouldStartEditing) setEditingCell(cellId);
-
     requestAnimationFrame(() => {
       const targetRef = cellRefs.current.get(cellId);
       if (targetRef?.current) targetRef.current.focus();
@@ -413,7 +297,6 @@ export default function DataTable({
   useEffect(() => {
     if (!requestedCellId) return;
     if (!editableCells.includes(requestedCellId)) return;
-
     setSelectedRowId(requestedCellId.split(':')[0]);
     focusCellById(requestedCellId, true);
     onRequestedCellHandled?.();
@@ -463,17 +346,7 @@ export default function DataTable({
   function toggleSort(columnKey) {
     const column = COLUMN_MAP.get(columnKey);
     if (!column?.sortable) return;
-
-    setSortConfig((previous) => {
-      if (previous.key === columnKey) {
-        return {
-          key: columnKey,
-          direction: previous.direction === 'asc' ? 'desc' : 'asc',
-        };
-      }
-
-      return { key: columnKey, direction: 'asc' };
-    });
+    setSortConfig((previous) => previous.key === columnKey ? { key: columnKey, direction: previous.direction === 'asc' ? 'desc' : 'asc' } : { key: columnKey, direction: 'asc' });
   }
 
   function selectRowOnly(row) {
@@ -485,20 +358,14 @@ export default function DataTable({
   function handleCellOpen(row, columnKey, startEditing = false) {
     if (row.type !== 'activity') return;
     if (!editableColumnKeys.includes(columnKey)) return;
-
     setSelectedRowId(row.id);
     const nextCellId = buildActivityCellId(row.id, columnKey);
     focusCellById(nextCellId, startEditing);
   }
 
   async function handleAddFromSelection() {
-    const targetRow =
-      selectedRow ||
-      processedRows.find((row) => row.type === 'wbs') ||
-      processedRows.find((row) => row.type === 'activity');
-
+    const targetRow = selectedRow || processedRows.find((row) => row.type === 'wbs') || processedRows.find((row) => row.type === 'activity');
     if (!targetRow) return;
-
     const wbsTarget = targetRow.type === 'activity' ? { id: targetRow.wbs_id } : targetRow;
     await onAddActivity(wbsTarget);
   }
@@ -508,84 +375,48 @@ export default function DataTable({
     await onDeleteActivity(selectedActivity);
   }
 
+  function resolveDisplayLabel(columnKey, row) {
+    if (columnKey === 'status_code') return row.status_name || statusMap.get(String(row.status_code || '')) || row.status_code || '—';
+    if (columnKey === 'activity_type_code') return row.activity_type_name || typeMap.get(String(row.activity_type_code || '')) || row.activity_type_code || '—';
+    if (columnKey === 'priority_code') return row.priority_name || priorityMap.get(String(row.priority_code || '')) || row.priority_code || '—';
+    if (columnKey === 'discipline_code') return row.discipline_name || disciplineMap.get(String(row.discipline_code || '')) || row.discipline_code || '—';
+    return row[columnKey];
+  }
+
   function renderReadonlyValue(key, value) {
-    if (['start_date', 'end_date', 'lb_start_date', 'lb_end_date'].includes(key)) {
-      return formatDate(value);
-    }
-    if (key === 'duration' || key === 'lb_duration') {
-      return value ?? '—';
-    }
-    if (key === 'progress' || key === 'lb_progress') {
-      return formatProgress(value);
-    }
-    if (key === 'hours' || key === 'lb_hours') {
-      return value === null || value === undefined || value === '' ? '—' : formatNumber(value);
-    }
-    if (key === 'cost' || key === 'lb_cost') {
-      return value === null || value === undefined || value === '' ? '—' : formatCurrency(value);
-    }
-    if (key === 'status' || key === 'lb_status') {
-      return value || '—';
-    }
+    if (['start_date', 'end_date', 'lb_start_date', 'lb_end_date'].includes(key)) return formatDate(value);
+    if (key === 'duration' || key === 'lb_duration') return value ?? '—';
+    if (key === 'progress' || key === 'lb_progress') return formatProgress(value);
+    if (key === 'hours' || key === 'lb_hours') return value === null || value === undefined || value === '' ? '—' : formatNumber(value);
+    if (key === 'cost' || key === 'lb_cost' || key === 'ev_amount') return value === null || value === undefined || value === '' ? '—' : formatCurrency(value);
+    if (['status_code', 'lb_status', 'activity_type_code', 'priority_code', 'discipline_code'].includes(key)) return value || '—';
     return value || '—';
   }
 
   function renderWbsCell(row, column, isSelectedRow = false) {
     const baseClass = `border-b border-slate-200 px-2 py-1 text-xs ${isSelectedRow ? 'bg-sky-100' : 'bg-slate-50'}`;
-
-    if (column.key === 'code') {
-      return <div className={`${baseClass} font-semibold text-slate-700`}>{row.code}</div>;
-    }
-
+    if (column.key === 'code') return <div className={`${baseClass} font-semibold text-slate-700`}>{row.code}</div>;
     if (column.key === 'name') {
       return (
         <div className={`${baseClass} font-semibold text-slate-800`}>
           <div className="flex items-center gap-2">
-            <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-700">
-              WBS
-            </span>
+            <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-700">WBS</span>
             <span>{row.name}</span>
-            {row.rollup_activity_count > 0 ? (
-              <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] text-slate-600">
-                {row.rollup_activity_count} act.
-              </span>
-            ) : null}
+            {row.rollup_activity_count > 0 ? <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] text-slate-600">{row.rollup_activity_count} act.</span> : null}
           </div>
         </div>
       );
     }
-
-    if (BASELINE_COLUMN_KEYS.includes(column.key)) {
-      return <div className={`${baseClass} text-slate-400`}>—</div>;
-    }
-
-    if (column.key === 'start_date') {
-      return <div className={baseClass}>{formatDate(row.rollup_start_date)}</div>;
-    }
-    if (column.key === 'end_date') {
-      return <div className={baseClass}>{formatDate(row.rollup_end_date)}</div>;
-    }
-    if (column.key === 'duration') {
-      return <div className={baseClass}>{row.rollup_duration || '—'}</div>;
-    }
-    if (column.key === 'progress') {
-      return <div className={baseClass}>{formatProgress(row.rollup_progress)}</div>;
-    }
-    if (column.key === 'hours') {
-      return <div className={baseClass}>{formatNumber(row.rollup_hours)}</div>;
-    }
-    if (column.key === 'cost') {
-      return <div className={baseClass}>{formatCurrency(row.rollup_cost)}</div>;
-    }
-    if (column.key === 'status') {
-      return (
-        <div className={baseClass}>
-          {row.visible_direct_activity_count}/{row.total_direct_activity_count} directas visibles
-        </div>
-      );
-    }
-
-    return <div className={baseClass}>—</div>;
+    if (BASELINE_COLUMN_KEYS.includes(column.key)) return <div className={baseClass}>{renderReadonlyValue(column.key, getBaselineValue(row, column.key))}</div>;
+    if (column.key === 'start_date') return <div className={baseClass}>{formatDate(row.rollup_start_date)}</div>;
+    if (column.key === 'end_date') return <div className={baseClass}>{formatDate(row.rollup_end_date)}</div>;
+    if (column.key === 'duration') return <div className={baseClass}>{row.rollup_duration || '—'}</div>;
+    if (column.key === 'progress') return <div className={baseClass}>{formatProgress(row.rollup_progress)}</div>;
+    if (column.key === 'hours') return <div className={baseClass}>{formatNumber(row.rollup_hours)}</div>;
+    if (column.key === 'cost') return <div className={baseClass}>{formatCurrency(row.rollup_cost)}</div>;
+    if (column.key === 'ev_amount') return <div className={baseClass}>{formatCurrency(row.rollup_ev_amount)}</div>;
+    if (column.key === 'status_code') return <div className={baseClass}>{row.visible_direct_activity_count}/{row.total_direct_activity_count} directas visibles</div>;
+    return <div className={`${baseClass} text-slate-400`}>—</div>;
   }
 
   function renderActivityCell(row, column) {
@@ -601,9 +432,7 @@ export default function DataTable({
       inputRef: registerCellRef(cellId),
       isActive: activeCell === cellId,
       startEditing: editingCell === cellId,
-      onEditingHandled: () => {
-        setEditingCell((previous) => (previous === cellId ? null : previous));
-      },
+      onEditingHandled: () => setEditingCell((previous) => (previous === cellId ? null : previous)),
       onActivate: () => {
         setSelectedRowId(row.id);
         setActiveCell(cellId);
@@ -612,137 +441,66 @@ export default function DataTable({
     };
 
     if (column.key === 'code') {
-      return (
-        <EditableCell
-          value={row.activity_id || ''}
-          className={baseCellClass}
-          {...commonProps}
-          onCommit={(value) => onUpdateActivity(row, { activity_id: value })}
-        />
-      );
+      return <EditableCell value={row.activity_id || ''} {...commonProps} onCommit={(value) => onUpdateActivity(row, { activity_id: value })} />;
     }
-
     if (column.key === 'name') {
-      return (
-        <EditableCell
-          value={row.name || ''}
-          className={baseCellClass}
-          {...commonProps}
-          onCommit={(value) => onUpdateActivity(row, { name: value })}
-        />
-      );
+      return <EditableCell value={row.name || ''} {...commonProps} onCommit={(value) => onUpdateActivity(row, { name: value })} />;
     }
-
     if (column.key === 'start_date' || column.key === 'end_date') {
-      return (
-        <EditableCell
-          value={normalizeDateValue(row[column.key]) || ''}
-          className={baseCellClass}
-          type="date"
-          {...commonProps}
-          onCommit={(value) => onUpdateActivity(row, { [column.key]: value })}
-        />
-      );
+      return <EditableCell value={normalizeDateValue(row[column.key]) || ''} type="date" {...commonProps} onCommit={(value) => onUpdateActivity(row, { [column.key]: value })} />;
     }
-
-    if (column.key === 'duration') {
-      return <div className={baseCellClass}>{row.duration ?? '—'}</div>;
-    }
-
+    if (column.key === 'duration') return <div className={baseCellClass}>{row.duration ?? '—'}</div>;
+    if (column.key === 'ev_amount') return <div className={baseCellClass}>{renderReadonlyValue(column.key, row.ev_amount)}</div>;
     if (column.key === 'progress' || column.key === 'hours' || column.key === 'cost') {
-      return (
-        <EditableCell
-          value={row[column.key] ?? 0}
-          className={baseCellClass}
-          type="number"
-          {...commonProps}
-          onCommit={(value) => onUpdateActivity(row, { [column.key]: Number(value || 0) })}
-        />
-      );
+      return <EditableCell value={row[column.key] ?? 0} type="number" {...commonProps} onCommit={(value) => onUpdateActivity(row, { [column.key]: Number(value || 0) })} />;
     }
-
-    if (column.key === 'status') {
-      return (
-        <EditableCell
-          value={row.status || ''}
-          className={baseCellClass}
-          type="select"
-          options={STATUS_OPTIONS}
-          {...commonProps}
-          onCommit={(value) => onUpdateActivity(row, { status: value })}
-        />
-      );
+    if (column.key === 'status_code') {
+      return <EditableCell value={row.status_code || ''} type="select" options={statusOptions} {...commonProps} onCommit={(value) => onUpdateActivity(row, { status_code: value })} />;
     }
-
-    return <div className={baseCellClass}>{renderReadonlyValue(column.key, row[column.key])}</div>;
+    if (column.key === 'activity_type_code') {
+      return <EditableCell value={row.activity_type_code || ''} type="select" options={activityTypeOptions} {...commonProps} onCommit={(value) => onUpdateActivity(row, { activity_type_code: value })} />;
+    }
+    if (column.key === 'priority_code') {
+      return <EditableCell value={row.priority_code || ''} type="select" options={priorityOptions} {...commonProps} onCommit={(value) => onUpdateActivity(row, { priority_code: value })} />;
+    }
+    if (column.key === 'discipline_code') {
+      return <EditableCell value={row.discipline_code || ''} type="select" options={disciplineOptions} {...commonProps} onCommit={(value) => onUpdateActivity(row, { discipline_code: value })} />;
+    }
+    return <div className={baseCellClass}>{renderReadonlyValue(column.key, resolveDisplayLabel(column.key, row))}</div>;
   }
 
   const modalColumns = useMemo(() => ALL_COLUMNS.map((column) => ({ ...column })), []);
-  const visibleConfigurableKeys = columnSettings.visibleKeys.filter((key) =>
-    CONFIGURABLE_COLUMN_KEYS.includes(key)
-  );
+  const visibleConfigurableKeys = columnSettings.visibleKeys.filter((key) => CONFIGURABLE_COLUMN_KEYS.includes(key));
   const gridTemplateColumns = visibleColumns.map((column) => column.width).join(' ');
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar por WBS, código, actividad o estado"
-            className="w-72 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs"
-          />
-
-          <select
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
-            className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs"
-          >
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por WBS, código, actividad o clasificación" className="w-80 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs" />
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs">
             <option value="ALL">Todos los estados</option>
-            {STATUS_OPTIONS.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
+            {(statusOptions || []).map((status) => {
+              const value = status?.code ?? status?.value ?? status;
+              const label = status?.name ?? status?.label ?? status?.code ?? status;
+              return <option key={value} value={value}>{label}</option>;
+            })}
           </select>
-
-          <button
-            type="button"
-            onClick={() => setShowColumnPanel(true)}
-            className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700"
-          >
-            Columnas...
-          </button>
+          <button type="button" onClick={() => setShowColumnPanel(true)} className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700">Columnas...</button>
         </div>
-
         <div className="text-xs text-slate-500">{activityRows.length} actividades visibles</div>
       </div>
 
       <div className="flex gap-3">
         <div className="min-w-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white">
           <div className="max-h-[68vh] overflow-auto">
-            <div
-              className="sticky top-0 z-10 grid border-b border-slate-200 bg-slate-100 text-[11px] font-semibold uppercase tracking-wide text-slate-600"
-              style={{ gridTemplateColumns }}
-            >
+            <div className="sticky top-0 z-10 grid border-b border-slate-200 bg-slate-100 text-[11px] font-semibold uppercase tracking-wide text-slate-600" style={{ gridTemplateColumns }}>
               {visibleColumns.map((column) => {
                 const isSorted = sortConfig.key === column.key;
                 return (
-                  <button
-                    key={column.key}
-                    type="button"
-                    onClick={() => toggleSort(column.key)}
-                    className={`flex items-center gap-1 px-2 py-2 text-left ${
-                      column.sortable ? 'hover:bg-slate-200' : 'cursor-default'
-                    }`}
-                  >
+                  <button key={column.key} type="button" onClick={() => toggleSort(column.key)} className={`flex items-center gap-1 px-2 py-2 text-left ${column.sortable ? 'hover:bg-slate-200' : 'cursor-default'}`}>
                     <span>{column.label}</span>
-                    {column.sortable ? (
-                      <span className="text-[10px] text-slate-400">
-                        {isSorted ? (sortConfig.direction === 'asc' ? '▲' : '▼') : '↕'}
-                      </span>
-                    ) : null}
+                    {column.sortable ? <span className="text-[10px] text-slate-400">{isSorted ? (sortConfig.direction === 'asc' ? '▲' : '▼') : '↕'}</span> : null}
                   </button>
                 );
               })}
@@ -754,20 +512,10 @@ export default function DataTable({
               processedRows.map((row) => {
                 const isSelectedRow = selectedRowId === row.id;
                 return (
-                  <div
-                    key={row.id}
-                    className={`grid ${isSelectedRow ? 'ring-1 ring-inset ring-sky-300' : ''}`}
-                    style={{ gridTemplateColumns }}
-                    onClick={() => selectRowOnly(row)}
-                  >
+                  <div key={row.id} className={`grid ${isSelectedRow ? 'ring-1 ring-inset ring-sky-300' : ''}`} style={{ gridTemplateColumns }} onClick={() => selectRowOnly(row)}>
                     {visibleColumns.map((column) => (
-                      <div
-                        key={`${row.id}:${column.key}`}
-                        onDoubleClick={() => handleCellOpen(row, column.key, row.type === 'activity')}
-                      >
-                        {row.type === 'wbs'
-                          ? renderWbsCell(row, column, isSelectedRow)
-                          : renderActivityCell(row, column)}
+                      <div key={`${row.id}:${column.key}`} onDoubleClick={() => handleCellOpen(row, column.key, row.type === 'activity')}>
+                        {row.type === 'wbs' ? renderWbsCell(row, column, isSelectedRow) : renderActivityCell(row, column)}
                       </div>
                     ))}
                   </div>
@@ -778,25 +526,10 @@ export default function DataTable({
         </div>
 
         <aside className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <div className="mb-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Acciones
-          </div>
-
+          <div className="mb-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Acciones</div>
           <div className="flex flex-col items-center gap-2">
-            <ActionRailButton
-              icon={<PlusIcon />}
-              label="Agregar actividad"
-              onClick={handleAddFromSelection}
-              disabled={!selectedRow}
-            />
-
-            <ActionRailButton
-              icon={<TrashIcon />}
-              label="Eliminar actividad"
-              tone="danger"
-              onClick={handleDeleteSelected}
-              disabled={!selectedActivity}
-            />
+            <ActionRailButton icon={<PlusIcon />} label="Agregar actividad" onClick={handleAddFromSelection} disabled={!selectedRow} />
+            <ActionRailButton icon={<TrashIcon />} label="Eliminar actividad" tone="danger" onClick={handleDeleteSelected} disabled={!selectedActivity} />
           </div>
         </aside>
       </div>
@@ -809,18 +542,11 @@ export default function DataTable({
         defaultSelectedKeys={OPERATIVE_COLUMN_KEYS}
         onClose={() => setShowColumnPanel(false)}
         onApply={(selectedKeys) => {
-          const cleanedSelected = Array.isArray(selectedKeys)
-            ? selectedKeys.filter((key) => CONFIGURABLE_COLUMN_KEYS.includes(key))
-            : [];
-
+          const cleanedSelected = Array.isArray(selectedKeys) ? selectedKeys.filter((key) => CONFIGURABLE_COLUMN_KEYS.includes(key)) : [];
           updateColumnSettings({
             visibleKeys: [...FIXED_COLUMN_KEYS, ...cleanedSelected],
-            order: [
-              ...cleanedSelected,
-              ...CONFIGURABLE_COLUMN_KEYS.filter((key) => !cleanedSelected.includes(key)),
-            ],
+            order: [...cleanedSelected, ...CONFIGURABLE_COLUMN_KEYS.filter((key) => !cleanedSelected.includes(key))],
           });
-
           setShowColumnPanel(false);
         }}
       />

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 function formatDateDisplay(value) {
   if (!value) return '';
@@ -9,6 +9,18 @@ function formatDateDisplay(value) {
 
 function isPrintableKey(event) {
   return event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
+}
+
+function normalizeOptions(options = []) {
+  return (options || []).map((item) => {
+    if (typeof item === 'string') {
+      return { value: item, label: item };
+    }
+    return {
+      value: item?.value ?? item?.code ?? '',
+      label: item?.label ?? item?.name ?? item?.value ?? item?.code ?? '',
+    };
+  });
 }
 
 export default function EditableCell({
@@ -26,6 +38,7 @@ export default function EditableCell({
   const [localValue, setLocalValue] = useState(value ?? '');
   const [isEditing, setIsEditing] = useState(false);
   const innerInputRef = useRef(null);
+  const normalizedOptions = useMemo(() => normalizeOptions(options), [options]);
 
   useEffect(() => {
     setLocalValue(value ?? '');
@@ -42,9 +55,7 @@ export default function EditableCell({
     if (isEditing) {
       requestAnimationFrame(() => {
         innerInputRef.current?.focus();
-        if (type !== 'select') {
-          innerInputRef.current?.select?.();
-        }
+        if (type !== 'select') innerInputRef.current?.select?.();
       });
     }
   }, [isEditing, type]);
@@ -78,7 +89,8 @@ export default function EditableCell({
     }
 
     if (type === 'select') {
-      return localValue || <span className="text-slate-300">—</span>;
+      const selectedOption = normalizedOptions.find((item) => String(item.value) === String(localValue));
+      return selectedOption?.label || localValue || <span className="text-slate-300">—</span>;
     }
 
     return localValue || <span className="text-slate-300">&nbsp;</span>;
@@ -113,10 +125,8 @@ export default function EditableCell({
           }}
           className="h-8 w-full border-none bg-transparent px-2 py-1 text-sm text-slate-800 outline-none"
         >
-          {options.map((item) => (
-            <option key={item} value={item}>
-              {item}
-            </option>
+          {normalizedOptions.map((item) => (
+            <option key={item.value} value={item.value}>{item.label}</option>
           ))}
         </select>
       );
@@ -146,11 +156,7 @@ export default function EditableCell({
           if (event.key === 'ArrowLeft' && event.currentTarget.selectionStart === 0 && event.currentTarget.selectionEnd === 0) {
             handleNavigationKey(event, 'left');
           }
-          if (
-            event.key === 'ArrowRight'
-            && event.currentTarget.selectionStart === event.currentTarget.value.length
-            && event.currentTarget.selectionEnd === event.currentTarget.value.length
-          ) {
+          if (event.key === 'ArrowRight' && event.currentTarget.selectionStart === event.currentTarget.value.length && event.currentTarget.selectionEnd === event.currentTarget.value.length) {
             handleNavigationKey(event, 'right');
           }
         }}
@@ -175,37 +181,31 @@ export default function EditableCell({
           setIsEditing(true);
           return;
         }
-
         if (event.key === 'Tab') {
           event.preventDefault();
           onNavigate?.(event.shiftKey ? 'left' : 'right');
           return;
         }
-
         if (event.key === 'ArrowUp') {
           event.preventDefault();
           onNavigate?.('up');
           return;
         }
-
         if (event.key === 'ArrowDown') {
           event.preventDefault();
           onNavigate?.('down');
           return;
         }
-
         if (event.key === 'ArrowLeft') {
           event.preventDefault();
           onNavigate?.('left');
           return;
         }
-
         if (event.key === 'ArrowRight') {
           event.preventDefault();
           onNavigate?.('right');
           return;
         }
-
         if (isPrintableKey(event) && type !== 'select') {
           event.preventDefault();
           setLocalValue(event.key);

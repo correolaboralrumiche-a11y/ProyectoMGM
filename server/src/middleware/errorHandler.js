@@ -16,27 +16,39 @@ function buildConstraintMessage(err) {
   if (constraint.includes('activity_id')) {
     return 'Activity ID must be unique within the project';
   }
-
   if (constraint.includes('project_baselines') && constraint.includes('name')) {
     return 'A baseline with that name already exists for the project';
   }
-
   if (constraint.includes('ux_activities_wbs_sort_order')) {
     return 'Activity ordering conflict detected. Please try again.';
   }
-
   if (
     constraint.includes('ux_wbs_nodes_root_sort_order') ||
     constraint.includes('ux_wbs_nodes_child_sort_order')
   ) {
     return 'WBS ordering conflict detected. Please try again.';
   }
-
   if (constraint.includes('projects_code')) {
     return 'Project code must be unique';
   }
 
   return null;
+}
+
+function buildDebugPayload(err) {
+  return {
+    error_name: err?.name || 'Error',
+    message: err?.message || null,
+    code: err?.code || null,
+    constraint: err?.constraint || null,
+    detail: err?.detail || null,
+    table: err?.table || null,
+    column: err?.column || null,
+    schema: err?.schema || null,
+    where: err?.where || null,
+    hint: err?.hint || null,
+    stack: err?.stack || null,
+  };
 }
 
 export function errorHandler(err, req, res, next) {
@@ -48,15 +60,14 @@ export function errorHandler(err, req, res, next) {
     message = buildConstraintMessage(err) || POSTGRES_ERROR_MAP[err.code].message;
   }
 
+  const debugPayload = buildDebugPayload(err);
   const logPayload = {
     request_id: req?.requestId || null,
     method: req?.method || null,
     url: req?.originalUrl || req?.url || null,
     status,
-    error_name: err?.name || 'Error',
-    message: err?.message || message,
+    ...debugPayload,
     details: err instanceof AppError ? err.details || null : null,
-    stack: err?.stack || null,
   };
 
   if (status >= 500) {
@@ -65,10 +76,13 @@ export function errorHandler(err, req, res, next) {
     logger.warn('Handled request error', logPayload);
   }
 
+  const isProduction = String(process.env.NODE_ENV || '').trim() === 'production';
+
   return res.status(status).json({
     success: false,
     error: message,
     request_id: req?.requestId || null,
     ...(err instanceof AppError && err.details ? { details: err.details } : {}),
+    ...(!isProduction ? { debug: debugPayload } : {}),
   });
 }

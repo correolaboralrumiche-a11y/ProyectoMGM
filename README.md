@@ -1,38 +1,60 @@
 # ProyectoMGM
 
-Aplicación web ERP ligera para control de proyectos y entregables, inspirada en Primavera P6, con enfoque en **WBS jerárquico**, **actividades**, **control operativo**, **seguridad**, **auditoría** y **gobierno del dato**.
+ERP web ligero para **Control de Proyectos** y **Control Documentario**, inspirado en prácticas de Primavera P6 y en flujos de seguimiento documental de ingeniería.
+
+La solución está orientada a:
+- estructuración jerárquica WBS
+- control de actividades
+- baseline y valor ganado básico
+- períodos financieros y snapshots
+- seguimiento documentario de entregables
+- seguridad, auditoría y gobierno del dato
+
+---
 
 ## Estado actual
 
-La versión actual del proyecto ya no corresponde a la primera versión publicada basada en SQLite. La base de trabajo vigente opera sobre:
+La base vigente del proyecto opera sobre:
 
 - **PostgreSQL**
 - **Migraciones con Knex**
 - **Seguridad ERP con login, roles y permisos**
 - **Auditoría y trazabilidad**
 - **Catálogos maestros**
-- **Presupuesto, avance y actuals básicos por actividad**
+- **Baseline y EV básico por actividad**
+- **Períodos financieros definidos por proyecto**
+- **Registro y seguimiento documentario**
 - **Seeds, healthchecks, verificación de plataforma y pruebas base**
+
+---
+
+## Enfoque funcional actual
+
+La aplicación quedó organizada en **dos módulos principales** desde la pantalla inicial:
+
+1. **Módulo 1 — Control de Proyectos**
+2. **Módulo 2 — Control Documentario**
+
+Esto evita mezclar navegación operativa y permite mantener separados los flujos de control de proyecto y de seguimiento documental.
 
 ---
 
 ## Alcance funcional actual
 
-ProyectoMGM está orientado a control de proyectos sin Gantt, con una experiencia tipo ERP enfocada en estructura, actividades, trazabilidad y control operativo.
-
-### Módulos implementados
+### Módulo 1 — Control de Proyectos
 
 #### Proyectos
 - Crear, editar y eliminar proyectos.
 - Gestión de proyecto activo.
 - Estado del proyecto normalizado por catálogo.
+- Prioridad y moneda por proyecto.
 - Restricciones operativas por permisos y estado del proyecto.
 
 #### WBS jerárquico
 - Creación de nodos padre e hijo.
 - Reordenamiento de nodos.
 - Recálculo automático de códigos WBS.
-- Mantenimiento de consistencia estructural.
+- Consistencia estructural y validaciones jerárquicas.
 - Control de acceso por permisos finos.
 
 #### Actividades
@@ -40,46 +62,93 @@ ProyectoMGM está orientado a control de proyectos sin Gantt, con una experienci
 - Validación de fechas.
 - Reordenamiento con `sort_order` consistente.
 - Visualización integrada dentro del contexto WBS.
-- Control de acceso por permisos finos.
+- Soporte para catálogos de actividad, estado, prioridad y disciplina.
+- Persistencia de visibilidad de columnas en la grilla.
 
 #### Control operativo por actividad
 - Presupuesto de horas hombre y costo por actividad.
-- Registro de avance por actividad.
-- Registro de actuals básicos por actividad.
-- Historial de avances y actuals.
+- Registro de avance acumulado por actividad.
+- Historial operativo de avance.
+- Registro de actuals básicos.
 - Resumen operativo con presupuesto, real y saldo.
 - Fecha de última actualización operativa.
 
 #### Baseline
 - Generación de líneas base del proyecto.
 - Snapshot de WBS y actividades.
+- Presupuesto base de horas y costo por actividad.
 - Base lista para comparación y control de variaciones.
 
-#### Seguridad ERP
+#### Valor Ganado básico (EV)
+- Cálculo de **EV monetario** por actividad.
+- Fórmula base: **EV = % avance acumulado × presupuesto costo de línea base**.
+- El EV se calcula contra la línea base, no contra el presupuesto operativo actual.
+- El EV queda disponible para snapshot financiero y análisis posterior.
+
+#### Períodos financieros
+- Definición previa de períodos financieros por proyecto.
+- Soporte para fechas de corte semanales u otra periodicidad definida por el usuario.
+- Selección del período financiero desde la pestaña **Actividades**.
+- Guardado de snapshot financiero desde **Actividades**.
+- Snapshot asociado a un período financiero definido y con fecha de snapshot.
+- Base temporal para análisis acumulado y parcial en futuros layouts o plantillas.
+
+---
+
+### Módulo 2 — Control Documentario
+
+#### Registro maestro de entregables
+- Alta y edición de entregables documentarios.
+- Código documental único por entregable.
+- Asociación con proyecto, WBS y actividad cuando corresponde.
+
+#### Seguimiento documentario
+- Tipo de entregable.
+- Estado documentario.
+- Disciplina y prioridad.
+- Fechas planificadas, forecast y reales.
+- Responsable y observaciones operativas.
+
+#### Revisiones y respuestas
+- Registro de revisiones por entregable.
+- Control de emisión y respuesta.
+- Datos de transmittal y respuesta documental.
+- Códigos de respuesta documental.
+- Actualización del estado documental actual con base en la última revisión.
+
+> Alcance actual del módulo 2: **seguimiento y registro de data documentaria**.  
+> No está orientado todavía a gestión de archivos adjuntos ni a workflow documental completo.
+
+---
+
+## Funcionalidades transversales
+
+### Seguridad ERP
 - Login de usuarios.
 - Roles y permisos.
 - Protección de rutas y acceso por sesión.
 - Permisos finos por módulo y acción.
 - Usuarios base reproducibles por seed.
 
-#### Auditoría y trazabilidad
+### Auditoría y trazabilidad
 - Registro de eventos relevantes del sistema.
 - Trazabilidad de login, logout y operaciones principales.
 - Metadata de creación y actualización.
 - Endpoint y vista de auditoría para perfiles autorizados.
+- `request_id` para soporte técnico y depuración.
 
-#### Catálogos maestros
+### Catálogos maestros
 - Administración de valores normalizados.
 - Base para listas controladas tipo ERP.
-- Normalización de estados y datos del sistema.
+- Soporte para estados, prioridades, disciplinas, monedas y otros valores controlados.
 
-#### Calidad de plataforma
+### Calidad de plataforma
 - Seeds reproducibles.
 - Healthchecks.
 - Verificación de plataforma.
 - Pruebas base automatizadas.
-- Scripts iniciales de backup y restore.
-- Logging con `request_id`.
+- Scripts base de respaldo y restauración.
+- Manejo más claro de errores técnicos en frontend/backend.
 
 ---
 
@@ -103,16 +172,15 @@ ProyectoMGM está orientado a control de proyectos sin Gantt, con una experienci
 
 ## Evolución del proyecto
 
-La primera versión pública del repositorio fue publicada como una aplicación funcional inicial con:
-
-- React + Vite + TailwindCSS en frontend
-- Node.js + Express en backend
-- SQLite como base de datos
+La primera versión pública del repositorio partió como una aplicación funcional inicial con:
+- React + Vite + TailwindCSS
+- Node.js + Express
+- SQLite
 - CRUD de proyectos
 - WBS jerárquico
 - Actividades por WBS
 
-A partir de esa base, el sistema fue evolucionado hacia una estructura más cercana a un ERP especializado de control de proyectos.
+Desde esa base, el proyecto evolucionó hacia una estructura más cercana a un ERP vertical para control de proyectos y seguimiento documentario.
 
 ---
 
@@ -122,7 +190,6 @@ A partir de esa base, el sistema fue evolucionado hacia una estructura más cerc
 - Consistencia de `sort_order` en WBS y actividades.
 - Validaciones técnicas más estrictas.
 - Operaciones críticas más robustas.
-- Mejora de estabilidad en backend.
 
 ### Sprint 2 — Seguridad ERP
 - Usuarios.
@@ -139,18 +206,17 @@ A partir de esa base, el sistema fue evolucionado hacia una estructura más cerc
 ### Sprint 4 — Catálogos maestros y normalización del dato
 - Catálogos administrables.
 - Normalización de estados.
-- Base para listas controladas y futuras reglas de negocio.
+- Base para reglas de negocio futuras.
 
 ### Sprint 5 — Estabilización funcional y UX operativa
 - Mejoras de estabilidad en frontend.
 - Recargas más consistentes entre pestañas.
 - Manejo homogéneo de errores.
-- Correcciones de comportamiento en actividades.
 
 ### Sprint 6 — Permisos finos y control operativo
 - Permisos por módulo y acción.
 - Restricciones operativas más específicas.
-- Ocultamiento/bloqueo de acciones según perfil.
+- Ocultamiento o bloqueo de acciones según perfil.
 
 ### Sprint 7 — Calidad de plataforma y confiabilidad
 - Seeds reproducibles.
@@ -158,7 +224,6 @@ A partir de esa base, el sistema fue evolucionado hacia una estructura más cerc
 - Healthchecks.
 - Logging técnico base.
 - Pruebas automatizadas iniciales.
-- Scripts de respaldo y restauración.
 
 ### Sprint 8 — Presupuesto, avance y actuals básicos por actividad
 - Historial operativo de avance.
@@ -167,9 +232,34 @@ A partir de esa base, el sistema fue evolucionado hacia una estructura más cerc
 - Panel operativo en actividades.
 - Corrección de manejo de fechas en control operativo.
 
+### Sprint 9 — Refactor frontend
+- Reorganización del frontend para bajar deuda técnica.
+- Mejor separación entre páginas, hooks, servicios y utilitarios.
+- Mejor base para crecer por módulos.
+
+### Sprint 10 — Consolidación del modelo ERP
+- Aprovechamiento del catálogo existente.
+- Nuevas dimensiones maestras para proyecto y actividades.
+- Mejor conexión entre frontend, backend y catálogos.
+
+### Sprint 11 — Separación por módulos y control documentario
+- Pantalla inicial de selección de módulo.
+- **Módulo 1: Control de Proyectos**
+- **Módulo 2: Control Documentario**
+- Registro maestro de entregables y revisiones documentarias.
+
+### Sprint 12 — Períodos financieros, baseline y EV
+- Renombre funcional de Corte a **Período Financiero**.
+- Definición previa de períodos financieros por proyecto.
+- Snapshot financiero asociado a período definido.
+- Corrección de generación de baseline.
+- Cálculo de EV contra presupuesto base.
+- Guardado de snapshot financiero desde la pestaña Actividades.
+- Persistencia de configuración visible de columnas en Actividades.
+
 ---
 
-## Estructura del proyecto
+## Estructura general del proyecto
 
 ```text
 ProyectoMGM/
@@ -327,57 +417,58 @@ npm test
 
 ---
 
-## Catálogos maestros
+## Flujo operativo recomendado
 
-Los catálogos maestros funcionan como listas controladas del sistema, similares conceptualmente a una lista desplegable de Excel, pero centralizadas y gobernadas por el ERP.
+### Para Control de Proyectos
+1. Crear proyecto.
+2. Construir WBS.
+3. Crear actividades.
+4. Generar línea base.
+5. Registrar avance acumulado en Actividades.
+6. Revisar EV calculado contra presupuesto base.
+7. Definir períodos financieros del proyecto.
+8. Seleccionar período financiero desde Actividades.
+9. Guardar snapshot financiero del período.
 
-Sirven para:
-- evitar texto libre inconsistente
-- mantener estados normalizados
-- facilitar filtros y reportes
-- preparar reglas de negocio futuras
-
----
-
-## Auditoría
-
-La solución actual ya incorpora una base de trazabilidad para eventos relevantes del sistema.
-
-Objetivos:
-- saber quién hizo un cambio
-- saber cuándo ocurrió
-- registrar eventos de operación clave
-- preparar el sistema para mayor gobierno del dato
+### Para Control Documentario
+1. Entrar al módulo Control Documentario.
+2. Crear entregables.
+3. Registrar revisiones y respuestas.
+4. Consultar estado documentario actual por entregable.
 
 ---
 
 ## Estado actual del sistema
 
-La solución ya debe considerarse un **ERP web ligero especializado en control de proyectos**, no una demo inicial.
+La solución ya debe considerarse un **ERP web ligero especializado**, con dos líneas claras de trabajo:
+
+- **Control de Proyectos**
+- **Control Documentario**
 
 Aun así, el proyecto sigue en evolución y todavía tiene espacio de maduración en:
-- corrección de errores visibles
-- endurecimiento UX
-- mayor profundidad funcional de control
-- despliegue más formal
-- mayor cobertura de pruebas
+- mayor profundidad de EV y curva temporal
+- plantillas o layouts time-phased
+- HH y presupuesto de línea base distribuidos en el tiempo
+- dashboards analíticos
+- endurecimiento adicional de pruebas y despliegue
 
 ---
 
 ## Hoja de ruta sugerida
 
-Siguientes pasos recomendados para continuar profesionalizando el sistema:
+Siguientes pasos recomendados:
 
-1. Corrección de errores visibles y estabilización adicional de flujos.
-2. Refinamiento de permisos por módulo y acción.
-3. Mejoras en auditoría y consulta histórica.
-4. Catálogos adicionales para disciplina, prioridad, tipo de actividad, moneda y unidades.
-5. Evolución hacia control más completo de HH, presupuesto, avance, baseline comparativa y EV.
+1. Consolidar totalmente el flujo de baseline, EV y períodos financieros.
+2. Implementar la funcionalidad de **Plantillas** para layouts temporales.
+3. Incorporar distribución temporal calculada de HH y presupuesto de línea base.
+4. Profundizar control analítico (EV acumulado/parcial, comparativas, curvas).
+5. Endurecer pruebas, performance y despliegue.
 
 ---
 
 ## Notas
 
 - Esta versión ya no debe considerarse una demo inicial.
-- El sistema cuenta con una base técnica razonablemente sólida para seguir evolucionando como ERP liviano de control de proyectos.
-- Antes de introducir módulos más avanzados como EV, ETC, EAC o forecasting, conviene seguir estabilizando flujos operativos y calidad funcional.
+- El sistema ya incluye base para ERP liviano con separación por módulos.
+- El módulo documentario actual está orientado a **seguimiento de data** y no todavía a gestión documental completa.
+- Antes de construir plantillas analíticas avanzadas, conviene consolidar completamente la capa temporal de períodos financieros.

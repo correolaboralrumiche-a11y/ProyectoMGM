@@ -8,13 +8,14 @@ export function useWBS(projectId) {
   const [error, setError] = useState('');
   const requestRef = useRef(0);
 
-  const loadWBS = useCallback(
+  const reloadWBS = useCallback(
     async (projectIdOverride = null) => {
-      const targetProjectId = projectIdOverride || projectId;
+      const targetProjectId = projectIdOverride ?? projectId;
 
       if (!targetProjectId) {
         setTree([]);
         setError('');
+        setLoading(false);
         return [];
       }
 
@@ -24,7 +25,10 @@ export function useWBS(projectId) {
 
       try {
         const data = await wbsApi.list(targetProjectId);
-        if (requestRef.current !== requestId) return [];
+
+        if (requestRef.current !== requestId) {
+          return [];
+        }
 
         const normalized = Array.isArray(data) ? data : [];
         setTree(normalized);
@@ -41,17 +45,17 @@ export function useWBS(projectId) {
         }
       }
     },
-    [projectId]
+    [projectId],
   );
 
   useEffect(() => {
-    loadWBS();
-  }, [loadWBS]);
+    reloadWBS();
+  }, [reloadWBS]);
 
   return {
     tree,
     loading,
     error,
-    reloadWBS: loadWBS,
+    reloadWBS,
   };
 }

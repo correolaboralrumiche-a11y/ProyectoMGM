@@ -1,21 +1,20 @@
 import express from 'express';
 import cors from 'cors';
-
 import './config/db.js';
 import { env } from './config/env.js';
 import { healthcheckDatabase } from './config/db.js';
 import { authenticate } from './middleware/authenticate.js';
 import { requestContext } from './middleware/requestContext.js';
 import { requestLogger } from './middleware/requestLogger.js';
-
 import authRoutes from './modules/auth/auth.routes.js';
 import auditRoutes from './modules/audit/audit.routes.js';
 import catalogsRoutes from './modules/catalogs/catalogs.routes.js';
 import projectsRoutes from './modules/projects/projects.routes.js';
 import wbsRoutes from './modules/wbs/wbs.routes.js';
 import activitiesRoutes from './modules/activities/activities.routes.js';
+import deliverablesRoutes from './modules/deliverables/deliverables.routes.js';
+import controlPeriodsRoutes from './modules/controlPeriods/controlPeriods.routes.js';
 import baselinesRoutes from './modules/baselines/baselines.routes.js';
-
 import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -57,7 +56,6 @@ app.get('/health/live', (req, res) => {
 app.get('/health/ready', async (req, res, next) => {
   try {
     const database = await healthcheckDatabase();
-
     return res.json({
       success: true,
       data: {
@@ -77,7 +75,6 @@ app.get('/health/ready', async (req, res, next) => {
 app.get('/health', async (req, res, next) => {
   try {
     const database = await healthcheckDatabase();
-
     return res.json({
       success: true,
       data: {
@@ -96,12 +93,13 @@ app.get('/health', async (req, res, next) => {
 
 app.use('/auth', authRoutes);
 app.use(authenticate);
-
 app.use('/audit-logs', auditRoutes);
 app.use('/catalogs', catalogsRoutes);
 app.use('/projects', projectsRoutes);
 app.use('/wbs', wbsRoutes);
 app.use('/activities', activitiesRoutes);
+app.use('/deliverables', deliverablesRoutes);
+app.use('/control-periods', controlPeriodsRoutes);
 app.use('/baselines', baselinesRoutes);
 
 app.use((req, res) => {

@@ -8,6 +8,27 @@ export const CATALOG_DEFINITIONS = {
     entity_type: 'catalog.project_status',
     usage: { table: 'projects', column: 'status' },
   },
+  'project-priorities': {
+    key: 'project-priorities',
+    table: 'project_priorities',
+    label: 'Prioridades de proyecto',
+    entity_type: 'catalog.project_priority',
+    usage: { table: 'projects', column: 'priority_code' },
+  },
+  currencies: {
+    key: 'currencies',
+    table: 'currencies',
+    label: 'Monedas',
+    entity_type: 'catalog.currency',
+    usage: { table: 'projects', column: 'currency_code' },
+  },
+  disciplines: {
+    key: 'disciplines',
+    table: 'disciplines',
+    label: 'Disciplinas',
+    entity_type: 'catalog.discipline',
+    usage: { table: 'activities', column: 'discipline_code' },
+  },
   'activity-statuses': {
     key: 'activity-statuses',
     table: 'activity_statuses',
@@ -28,6 +49,34 @@ export const CATALOG_DEFINITIONS = {
     label: 'Prioridades de actividad',
     entity_type: 'catalog.activity_priority',
     usage: { table: 'activities', column: 'priority_code' },
+  },
+  'deliverable-types': {
+    key: 'deliverable-types',
+    table: 'deliverable_types',
+    label: 'Tipos de entregable',
+    entity_type: 'catalog.deliverable_type',
+    usage: { table: 'deliverables', column: 'deliverable_type_code' },
+  },
+  'deliverable-statuses': {
+    key: 'deliverable-statuses',
+    table: 'deliverable_statuses',
+    label: 'Estados documentarios',
+    entity_type: 'catalog.deliverable_status',
+    usage: { table: 'deliverables', column: 'status_code' },
+  },
+  'document-response-codes': {
+    key: 'document-response-codes',
+    table: 'document_response_codes',
+    label: 'Códigos de respuesta documental',
+    entity_type: 'catalog.document_response_code',
+    usage: { table: 'deliverable_revisions', column: 'response_code' },
+  },
+  'revision-purposes': {
+    key: 'revision-purposes',
+    table: 'revision_purposes',
+    label: 'Propósitos de revisión',
+    entity_type: 'catalog.revision_purpose',
+    usage: { table: 'deliverable_revisions', column: 'issue_purpose_code' },
   },
 };
 
@@ -60,10 +109,12 @@ export const catalogsRepository = {
   getDefinition,
 
   listDefinitions() {
-    return Object.values(CATALOG_DEFINITIONS).map((definition) => ({
-      key: definition.key,
-      label: definition.label,
-    }));
+    return Object.values(CATALOG_DEFINITIONS)
+      .map((definition) => ({
+        key: definition.key,
+        label: definition.label,
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label, 'es', { sensitivity: 'base' }));
   },
 
   async listItems(catalogKey, options = {}, executor = pool) {
@@ -85,7 +136,7 @@ export const catalogsRepository = {
         FROM ${definition.table}
         ${includeInactive ? '' : 'WHERE is_active = TRUE'}
         ORDER BY sort_order ASC, LOWER(name) ASC, code ASC
-      `
+      `,
     );
 
     return result.rows.map(mapItem);
@@ -108,7 +159,7 @@ export const catalogsRepository = {
         FROM ${definition.table}
         WHERE code = $1
       `,
-      [code]
+      [code],
     );
 
     return mapItem(result.rows[0]);
@@ -131,7 +182,7 @@ export const catalogsRepository = {
         FROM ${definition.table}
         WHERE LOWER(name) = LOWER($1)
       `,
-      [name]
+      [name],
     );
 
     return mapItem(result.rows[0]);
@@ -169,7 +220,7 @@ export const catalogsRepository = {
         item.sort_order,
         item.created_by || null,
         item.updated_by || null,
-      ]
+      ],
     );
 
     return mapItem(result.rows[0]);
@@ -206,7 +257,7 @@ export const catalogsRepository = {
         item.is_active,
         item.sort_order,
         item.updated_by || null,
-      ]
+      ],
     );
 
     return mapItem(result.rows[0]);
@@ -220,7 +271,7 @@ export const catalogsRepository = {
         FROM ${definition.usage.table}
         WHERE ${definition.usage.column} = $1
       `,
-      [code]
+      [code],
     );
 
     return Number(result.rows[0]?.count || 0);

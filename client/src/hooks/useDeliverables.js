@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { activitiesApi } from '../services/activitiesApi.js';
+import { deliverablesApi } from '../services/deliverablesApi.js';
 import { getErrorMessage } from '../utils/error.js';
 
-export function useActivities(projectId) {
-  const [activities, setActivities] = useState([]);
+export function useDeliverables(projectId, filters = {}) {
+  const [deliverables, setDeliverables] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const requestRef = useRef(0);
 
-  const reloadActivities = useCallback(
-    async (projectIdOverride = null) => {
+  const reloadDeliverables = useCallback(
+    async (projectIdOverride = null, filtersOverride = null) => {
       const targetProjectId = projectIdOverride ?? projectId;
+      const targetFilters = filtersOverride ?? filters;
 
       if (!targetProjectId) {
-        setActivities([]);
+        setDeliverables([]);
         setError('');
         setLoading(false);
         return [];
@@ -24,19 +25,17 @@ export function useActivities(projectId) {
       setError('');
 
       try {
-        const data = await activitiesApi.list(targetProjectId);
+        const data = await deliverablesApi.list(targetProjectId, targetFilters);
 
-        if (requestRef.current !== requestId) {
-          return [];
-        }
+        if (requestRef.current !== requestId) return [];
 
         const normalized = Array.isArray(data) ? data : [];
-        setActivities(normalized);
+        setDeliverables(normalized);
         return normalized;
       } catch (err) {
         if (requestRef.current === requestId) {
-          setActivities([]);
-          setError(getErrorMessage(err, 'No se pudieron cargar las actividades.'));
+          setDeliverables([]);
+          setError(getErrorMessage(err, 'No se pudieron cargar los entregables.'));
         }
         return [];
       } finally {
@@ -45,17 +44,17 @@ export function useActivities(projectId) {
         }
       }
     },
-    [projectId],
+    [projectId, filters],
   );
 
   useEffect(() => {
-    reloadActivities();
-  }, [reloadActivities]);
+    reloadDeliverables();
+  }, [reloadDeliverables]);
 
   return {
-    activities,
+    deliverables,
     loading,
     error,
-    reloadActivities,
+    reloadDeliverables,
   };
 }

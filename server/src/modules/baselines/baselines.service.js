@@ -63,6 +63,7 @@ export const baselinesService = {
     if (!project) {
       throw new AppError('Project not found', 404);
     }
+
     ensureProjectOperationallyEditable(project, actor, 'baseline creation');
 
     const baselineName = await normalizeBaselineName(payload?.name, projectId);
@@ -126,7 +127,7 @@ export const baselinesService = {
       sort_order: Number(row.sort_order || 0),
       source_created_at: row.created_at || null,
       source_updated_at: row.updated_at || null,
-      created_at,
+      created_at: createdAt,
     }));
 
     return withTransaction(async (client) => {
@@ -136,7 +137,7 @@ export const baselinesService = {
           baselineWbs,
           baselineActivities,
         },
-        client
+        client,
       );
 
       await auditRepository.create(
@@ -155,7 +156,7 @@ export const baselinesService = {
           },
           ...requestContext,
         },
-        client
+        client,
       );
 
       return created;
@@ -209,7 +210,7 @@ export const baselinesService = {
           after_data: null,
           ...requestContext,
         },
-        client
+        client,
       );
 
       await baselinesRepository.removeBaseline(normalizedBaselineId, client);
