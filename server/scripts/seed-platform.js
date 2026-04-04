@@ -43,6 +43,12 @@ const PERMISSION_DEFINITIONS = [
   ['control_periods.reopen', 'Financial periods reopen', 'Reopen captured financial period snapshots'],
   ['control_periods.delete', 'Financial periods delete', 'Delete financial period definitions without data or editable snapshots'],
 
+  ['layout_templates.read', 'Layout templates read', 'View analytic layout templates'],
+  ['layout_templates.write', 'Layout templates write', 'Create and update analytic layout templates'],
+  ['layout_templates.create', 'Layout templates create', 'Create analytic layout templates'],
+  ['layout_templates.update', 'Layout templates update', 'Update analytic layout templates'],
+  ['layout_templates.delete', 'Layout templates delete', 'Delete analytic layout templates'],
+
   ['baselines.read', 'Baselines read', 'View baselines'],
   ['baselines.write', 'Baselines write', 'Create baselines'],
   ['baselines.create', 'Baselines create', 'Create baselines'],
@@ -53,12 +59,6 @@ const PERMISSION_DEFINITIONS = [
   ['catalogs.manage', 'Catalogs manage', 'Manage catalogs'],
 
   ['audit.read', 'Audit read', 'View audit logs'],
-
-  ['layout_templates.read', 'Layout templates read', 'View project layout templates'],
-  ['layout_templates.write', 'Layout templates write', 'Create and update project layout templates'],
-  ['layout_templates.create', 'Layout templates create', 'Create project layout templates'],
-  ['layout_templates.update', 'Layout templates update', 'Update project layout templates'],
-  ['layout_templates.delete', 'Layout templates delete', 'Delete project layout templates'],
 ];
 
 const USER_DEFINITIONS = [
@@ -99,13 +99,13 @@ function buildRolePermissionMap(allPermissionCodes) {
 async function ensureRole(client, [code, name, description]) {
   await client.query(
     `
-    INSERT INTO roles (code, name, description)
-    VALUES ($1, $2, $3)
-    ON CONFLICT (code)
-    DO UPDATE SET
-      name = EXCLUDED.name,
-      description = EXCLUDED.description,
-      updated_at = NOW()
+      INSERT INTO roles (code, name, description)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (code)
+      DO UPDATE SET
+        name = EXCLUDED.name,
+        description = EXCLUDED.description,
+        updated_at = NOW()
     `,
     [code, name, description],
   );
@@ -117,13 +117,13 @@ async function ensureRole(client, [code, name, description]) {
 async function ensurePermission(client, [code, name, description]) {
   await client.query(
     `
-    INSERT INTO permissions (code, name, description)
-    VALUES ($1, $2, $3)
-    ON CONFLICT (code)
-    DO UPDATE SET
-      name = EXCLUDED.name,
-      description = EXCLUDED.description,
-      updated_at = NOW()
+      INSERT INTO permissions (code, name, description)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (code)
+      DO UPDATE SET
+        name = EXCLUDED.name,
+        description = EXCLUDED.description,
+        updated_at = NOW()
     `,
     [code, name, description],
   );
@@ -142,20 +142,20 @@ async function ensureUser(client, user) {
     const passwordHash = hashPassword(user.password);
     await client.query(
       `
-      INSERT INTO users (username, email, full_name, password_hash, status)
-      VALUES ($1, $2, $3, $4, 'active')
+        INSERT INTO users (username, email, full_name, password_hash, status)
+        VALUES ($1, $2, $3, $4, 'active')
       `,
       [user.username, user.email, user.full_name, passwordHash],
     );
   } else {
     await client.query(
       `
-      UPDATE users
-      SET email = $2,
-          full_name = $3,
-          status = 'active',
-          updated_at = NOW()
-      WHERE LOWER(username) = LOWER($1)
+        UPDATE users
+        SET email = $2,
+            full_name = $3,
+            status = 'active',
+            updated_at = NOW()
+        WHERE LOWER(username) = LOWER($1)
       `,
       [user.username, user.email, user.full_name],
     );
@@ -165,16 +165,15 @@ async function ensureUser(client, user) {
     `SELECT id, username FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1`,
     [user.username],
   );
-
   return result.rows[0];
 }
 
 async function ensureUserRole(client, userId, roleId) {
   await client.query(
     `
-    INSERT INTO user_roles (user_id, role_id)
-    VALUES ($1, $2)
-    ON CONFLICT (user_id, role_id) DO NOTHING
+      INSERT INTO user_roles (user_id, role_id)
+      VALUES ($1, $2)
+      ON CONFLICT (user_id, role_id) DO NOTHING
     `,
     [userId, roleId],
   );
@@ -183,9 +182,9 @@ async function ensureUserRole(client, userId, roleId) {
 async function ensureRolePermission(client, roleId, permissionId) {
   await client.query(
     `
-    INSERT INTO role_permissions (role_id, permission_id)
-    VALUES ($1, $2)
-    ON CONFLICT (role_id, permission_id) DO NOTHING
+      INSERT INTO role_permissions (role_id, permission_id)
+      VALUES ($1, $2)
+      ON CONFLICT (role_id, permission_id) DO NOTHING
     `,
     [roleId, permissionId],
   );
@@ -211,7 +210,6 @@ async function main() {
     for (const [roleCode, codes] of Object.entries(rolePermissionMap)) {
       const role = roles.get(roleCode);
       if (!role) continue;
-
       for (const permissionCode of codes) {
         const permission = permissions.get(permissionCode);
         if (!permission) continue;
@@ -222,7 +220,6 @@ async function main() {
     for (const userDefinition of USER_DEFINITIONS) {
       const user = await ensureUser(client, userDefinition);
       const role = roles.get(userDefinition.role);
-
       if (user?.id && role?.id) {
         await ensureUserRole(client, user.id, role.id);
       }

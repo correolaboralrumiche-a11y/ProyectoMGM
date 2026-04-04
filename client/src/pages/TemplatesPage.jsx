@@ -6,6 +6,10 @@ import TemplateViewer from '../components/templates/TemplateViewer.jsx';
 import { useLayoutTemplates } from '../hooks/useLayoutTemplates.js';
 import { getErrorMessage } from '../utils/error.js';
 
+function getTemplatesPermissions(permissions = {}) {
+  return permissions?.layoutTemplates || permissions || {};
+}
+
 function buildEmptyForm(catalog) {
   const firstMetric = Array.isArray(catalog?.time_metrics) ? catalog.time_metrics[0] : null;
   const firstMode = Array.isArray(firstMetric?.modes) ? firstMetric.modes[0] : null;
@@ -56,21 +60,24 @@ function TemplateList({
 }) {
   return (
     <SectionCard
-      title="Plantillas guardadas"
-      subtitle="Selecciona una plantilla existente o crea una nueva definición."
+      title="Plantillas del proyecto"
+      subtitle="Selecciona una plantilla existente o crea una nueva definición de layout."
       actions={
-        <button
-          type="button"
-          onClick={onCreateNew}
-          disabled={!canCreate}
-          className="rounded-xl border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-300"
-        >
-          Nueva plantilla
-        </button>
+        canCreate ? (
+          <button
+            type="button"
+            onClick={onCreateNew}
+            className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+          >
+            Nueva plantilla
+          </button>
+        ) : null
       }
     >
       {!templates.length ? (
-        <p className="text-sm text-slate-500">Este proyecto todavía no tiene plantillas registradas.</p>
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
+          Este proyecto todavía no tiene plantillas registradas.
+        </div>
       ) : (
         <div className="space-y-3">
           {templates.map((template) => {
@@ -79,28 +86,24 @@ function TemplateList({
               <div
                 key={template.id}
                 className={[
-                  'rounded-2xl border p-4 transition-colors',
-                  active ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white hover:border-slate-300',
+                  'rounded-2xl border p-4 transition',
+                  active ? 'border-blue-500 bg-blue-50/50 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300',
                 ].join(' ')}
               >
                 <button type="button" onClick={() => onSelect(template.id)} className="w-full text-left">
-                  <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="text-sm font-semibold text-slate-900">{template.name}</div>
                       <div className="mt-1 text-xs text-slate-500">
                         {template.base_level} · {template.time_metric} · {template.time_mode} · {template.time_scale}
                       </div>
                     </div>
-                    <span
-                      className={[
-                        'rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide',
-                        template.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500',
-                      ].join(' ')}
-                    >
+                    <span className="rounded-full bg-white px-3 py-1 text-[11px] font-medium text-slate-600 shadow-sm">
                       {template.is_active ? 'Activa' : 'Inactiva'}
                     </span>
                   </div>
                 </button>
+
                 {active && canDelete ? (
                   <div className="mt-3 flex justify-end">
                     <button
@@ -143,9 +146,10 @@ export default function TemplatesPage({ activeProjectId, activeProject, permissi
   const [builderError, setBuilderError] = useState('');
   const [editingTemplateId, setEditingTemplateId] = useState('');
 
-  const canCreate = permissions?.layoutTemplates?.create;
-  const canUpdate = permissions?.layoutTemplates?.update;
-  const canDelete = permissions?.layoutTemplates?.delete;
+  const templatePermissions = getTemplatesPermissions(permissions);
+  const canCreate = Boolean(templatePermissions?.create);
+  const canUpdate = Boolean(templatePermissions?.update);
+  const canDelete = Boolean(templatePermissions?.delete);
   const canWrite = !operationalLock && (editingTemplateId ? canUpdate : canCreate);
 
   useEffect(() => {
@@ -208,8 +212,8 @@ export default function TemplatesPage({ activeProjectId, activeProject, permissi
 
   if (!activeProjectId) {
     return (
-      <SectionCard title="Plantillas" subtitle="Layouts analíticos reutilizables para control temporal.">
-        <InlineAlert variant="info">Selecciona un proyecto activo para trabajar con plantillas.</InlineAlert>
+      <SectionCard title="Plantillas" subtitle="Layouts analíticos reutilizables">
+        <InlineAlert tone="info">Selecciona un proyecto activo para trabajar con plantillas.</InlineAlert>
       </SectionCard>
     );
   }
@@ -217,17 +221,29 @@ export default function TemplatesPage({ activeProjectId, activeProject, permissi
   return (
     <div className="space-y-6">
       <SectionCard title="Plantillas" subtitle={headerMessage}>
-        <div className="grid gap-6 xl:grid-cols-[360px,minmax(0,1fr)]">
-          <TemplateList
-            templates={templates}
-            selectedTemplateId={selectedTemplateId}
-            onSelect={setSelectedTemplateId}
-            onCreateNew={handleReset}
-            canCreate={canCreate && !operationalLock}
-            canDelete={canDelete && !operationalLock}
-            onDelete={handleDelete}
-            deleting={loading.deleting}
-          />
+        <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+          <span className="rounded-full bg-slate-100 px-3 py-1">Builder + visor temporal</span>
+          <span className="rounded-full bg-slate-100 px-3 py-1">Métricas válidas controladas</span>
+          <span className="rounded-full bg-slate-100 px-3 py-1">Semanal / mensual</span>
+        </div>
+      </SectionCard>
+
+      {errors.catalog ? <InlineAlert tone="danger">{errors.catalog}</InlineAlert> : null}
+      {errors.templates ? <InlineAlert tone="danger">{errors.templates}</InlineAlert> : null}
+
+      <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <TemplateList
+          templates={templates}
+          selectedTemplateId={selectedTemplateId}
+          onSelect={setSelectedTemplateId}
+          onCreateNew={handleReset}
+          canCreate={canCreate}
+          canDelete={canDelete}
+          onDelete={handleDelete}
+          deleting={loading.deleting}
+        />
+
+        <div className="space-y-6">
           <TemplateBuilder
             catalog={catalog}
             form={form}
@@ -239,20 +255,17 @@ export default function TemplatesPage({ activeProjectId, activeProject, permissi
             onSubmit={handleSubmit}
             onReset={handleReset}
           />
+
+          <TemplateViewer
+            selectedTemplate={selectedTemplate}
+            previewContext={previewContext}
+            viewerData={viewerData}
+            loading={loading.viewer}
+            error={errors.viewer}
+            onRefresh={refreshSelected}
+          />
         </div>
-      </SectionCard>
-
-      {errors.catalog ? <InlineAlert variant="error">{errors.catalog}</InlineAlert> : null}
-      {errors.templates ? <InlineAlert variant="error">{errors.templates}</InlineAlert> : null}
-
-      <TemplateViewer
-        selectedTemplate={selectedTemplate}
-        previewContext={previewContext}
-        viewerData={viewerData}
-        loading={loading.detail || loading.viewer}
-        error={errors.viewer}
-        onRefresh={refreshSelected}
-      />
+      </div>
     </div>
   );
 }

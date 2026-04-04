@@ -19,7 +19,7 @@ function mapTemplate(row) {
     id: row.id,
     project_id: row.project_id,
     name: row.name,
-    description: row.description || '',
+    description: row.description || row.notes || '',
     base_level: row.base_level,
     time_metric: row.time_metric,
     time_mode: row.time_mode,
@@ -49,7 +49,7 @@ export const layoutTemplatesRepository = {
   async listByProject(projectId, executor = pool) {
     const result = await executor.query(
       `
-        SELECT id, project_id, name, description, base_level, time_metric, time_mode, time_scale,
+        SELECT id, project_id, name, notes AS description, base_level, time_metric, time_mode, time_scale,
                is_active, created_by, updated_by, created_at, updated_at
         FROM layout_templates
         WHERE project_id = $1
@@ -65,7 +65,7 @@ export const layoutTemplatesRepository = {
   async findById(id, executor = pool) {
     const result = await executor.query(
       `
-        SELECT id, project_id, name, description, base_level, time_metric, time_mode, time_scale,
+        SELECT id, project_id, name, notes AS description, base_level, time_metric, time_mode, time_scale,
                is_active, created_by, updated_by, created_at, updated_at
         FROM layout_templates
         WHERE id = $1
@@ -101,7 +101,7 @@ export const layoutTemplatesRepository = {
         INSERT INTO layout_templates (
           project_id,
           name,
-          description,
+          notes,
           base_level,
           time_metric,
           time_mode,
@@ -134,7 +134,7 @@ export const layoutTemplatesRepository = {
       `
         UPDATE layout_templates
         SET name = $2,
-            description = $3,
+            notes = $3,
             base_level = $4,
             time_metric = $5,
             time_mode = $6,

@@ -1,17 +1,17 @@
 function ColumnOption({ column, checked, onToggle, disabled }) {
   return (
-    <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 hover:border-blue-300">
+    <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 hover:border-slate-300">
       <input
         type="checkbox"
-        className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
         checked={checked}
         onChange={() => onToggle(column.key)}
         disabled={disabled}
+        className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
       />
-      <span className="min-w-0">
-        <span className="block text-sm font-medium text-slate-900">{column.label}</span>
-        <span className="block text-xs text-slate-500">{column.key}</span>
-      </span>
+      <div className="min-w-0">
+        <div className="text-sm font-medium text-slate-800">{column.label}</div>
+        <div className="text-xs text-slate-500">{column.key}</div>
+      </div>
     </label>
   );
 }
@@ -32,22 +32,27 @@ export default function TemplateColumnsSelector({
   }
 
   if (!columns.length) {
-    return <p className="text-sm text-slate-500">No hay columnas disponibles para esta plantilla.</p>;
+    return (
+      <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
+        No hay columnas disponibles para esta plantilla.
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-4">
+    <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-medium text-slate-900">Columnas generales</p>
-          <p className="text-xs text-slate-500">
+          <div className="text-sm font-semibold text-slate-800">Columnas generales</div>
+          <div className="text-xs text-slate-500">
             Estas columnas se muestran en el panel izquierdo del visor.
-          </p>
+          </div>
         </div>
-        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+        <div className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600 shadow-sm">
           {selectedColumns.length} seleccionadas
-        </span>
+        </div>
       </div>
+
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {columns.map((column) => (
           <ColumnOption
