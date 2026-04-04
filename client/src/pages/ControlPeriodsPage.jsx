@@ -13,23 +13,21 @@ const EMPTY_DEFINITION_FORM = {
   end_date: '',
 };
 
-const EMPTY_CAPTURE_FORM = {
-  financial_period_id: '',
-  snapshot_date: '',
-  close_notes: '',
-};
-
-function formatNumber(value) {
-  const numeric = Number(value || 0);
-  return numeric.toLocaleString('es-PE', {
+function formatNumber(value, digits = 2) {
+  const numericValue = Number(value || 0);
+  return new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  });
+    maximumFractionDigits: digits,
+  }).format(numericValue);
 }
 
 function derivePeriodCode(startDate, cutoffDate) {
-  if (!startDate || !cutoffDate) return '';
-  return `${String(startDate).replaceAll('-', '')}_${String(cutoffDate).replaceAll('-', '')}`;
+  const normalizedStart = String(startDate || '').trim();
+  const normalizedCutoff = String(cutoffDate || '').trim();
+  if (!normalizedStart || !normalizedCutoff) return '';
+  const startToken = normalizedStart.replaceAll('-', '').slice(2);
+  const cutoffToken = normalizedCutoff.replaceAll('-', '').slice(2);
+  return `PF-${startToken}-${cutoffToken}`;
 }
 
 function getSelectionStorageKey(projectId) {
@@ -52,51 +50,46 @@ function setPreferredFinancialPeriodId(projectId, periodId) {
 }
 
 function StatusBadge({ status }) {
-  const normalized = String(status || '').trim().toLowerCase();
-  const tones = {
-    open: 'border-blue-200 bg-blue-50 text-blue-700',
-    reopened: 'border-amber-200 bg-amber-50 text-amber-700',
-    closed: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  };
-
-  const labels = {
-    open: 'Abierto',
-    reopened: 'Reabierto',
-    closed: 'Cerrado',
-  };
+  const normalized = String(status || '').toLowerCase();
+  const tone = normalized === 'closed'
+    ? 'bg-emerald-100 text-emerald-700'
+    : normalized === 'reopened'
+      ? 'bg-amber-100 text-amber-700'
+      : 'bg-slate-100 text-slate-700';
 
   return (
-    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${tones[normalized] || 'border-slate-200 bg-slate-50 text-slate-700'}`}>
-      {labels[normalized] || status || 'N/D'}
+    <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${tone}`}>
+      {status || '—'}
     </span>
   );
 }
 
-function DefinitionStatusBadge({ hasSnapshot }) {
-  return hasSnapshot ? (
-    <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
-      Con snapshot
-    </span>
-  ) : (
-    <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-      Pendiente
+function DefinitionStatusBadge({ hasSnapshot, snapshotStatusCode }) {
+  if (!hasSnapshot) {
+    return <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">Pendiente</span>;
+  }
+
+  return (
+    <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+      Snapshot {snapshotStatusCode || 'registrado'}
     </span>
   );
 }
 
 function MetricCard({ label, value, helper, tone = 'slate' }) {
-  const tones = {
-    slate: 'border-slate-200 bg-slate-50 text-slate-800',
-    blue: 'border-blue-200 bg-blue-50 text-blue-800',
-    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-    amber: 'border-amber-200 bg-amber-50 text-amber-800',
+  const toneMap = {
+    blue: 'border-blue-200 bg-blue-50 text-blue-900',
+    amber: 'border-amber-200 bg-amber-50 text-amber-900',
+    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+    slate: 'border-slate-200 bg-slate-50 text-slate-900',
   };
+  const toneClass = toneMap[tone] || toneMap.slate;
 
   return (
-    <div className={`rounded-2xl border p-4 ${tones[tone] || tones.slate}`}>
-      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] opacity-80">{label}</div>
-      <div className="mt-2 text-2xl font-semibold">{value}</div>
-      {helper ? <div className="mt-1 text-xs opacity-80">{helper}</div> : null}
+    <div className={`rounded-2xl border p-4 ${toneClass}`}>
+      <div className="text-xs font-medium uppercase tracking-[0.12em] opacity-80">{label}</div>
+      <div className="mt-2 text-3xl font-semibold">{value}</div>
+      {helper ? <div className="mt-2 text-xs opacity-80">{helper}</div> : null}
     </div>
   );
 }
@@ -112,63 +105,70 @@ function FinancialPeriodsTable({
   busyId,
 }) {
   if (!financialPeriods.length) {
-    return <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">Aún no hay periodos financieros definidos para este proyecto.</div>;
+    return (
+      <div className="rounded-xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">
+        Aún no hay periodos financieros definidos para este proyecto.
+      </div>
+    );
   }
 
   return (
-    <div className="overflow-x-auto rounded-2xl border border-slate-200">
+    <div className="overflow-hidden rounded-xl border border-slate-200">
       <table className="min-w-full divide-y divide-slate-200 text-sm">
-        <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+        <thead className="bg-slate-50 text-slate-600">
           <tr>
-            <th className="px-3 py-2">Código</th>
-            <th className="px-3 py-2">Nombre</th>
-            <th className="px-3 py-2">Inicio</th>
-            <th className="px-3 py-2">Corte</th>
-            <th className="px-3 py-2">Fin</th>
-            <th className="px-3 py-2">Estado</th>
-            <th className="px-3 py-2 text-right">Acciones</th>
+            <th className="px-3 py-2 text-left font-medium">Código</th>
+            <th className="px-3 py-2 text-left font-medium">Nombre</th>
+            <th className="px-3 py-2 text-left font-medium">Rango</th>
+            <th className="px-3 py-2 text-left font-medium">Corte</th>
+            <th className="px-3 py-2 text-left font-medium">Estado</th>
+            <th className="px-3 py-2 text-right font-medium">Acciones</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100 bg-white">
-          {financialPeriods.map((period) => {
-            const selected = selectedId === period.id;
-            const deleting = busyId === `delete-definition:${period.id}`;
+          {financialPeriods.map((definition) => {
+            const isSelected = selectedId === definition.id;
             return (
               <tr
-                key={period.id}
-                className={selected ? 'bg-blue-50/70' : 'hover:bg-slate-50'}
-                onClick={() => onSelect(period.id)}
+                key={definition.id}
+                className={isSelected ? 'bg-sky-50' : ''}
+                onClick={() => onSelect(definition.id)}
               >
-                <td className="px-3 py-2 font-medium text-slate-900">{period.period_code}</td>
-                <td className="px-3 py-2 text-slate-700">{period.name}</td>
-                <td className="px-3 py-2 text-slate-700">{period.start_date}</td>
-                <td className="px-3 py-2 text-slate-700">{period.cutoff_date}</td>
-                <td className="px-3 py-2 text-slate-700">{period.end_date}</td>
-                <td className="px-3 py-2"><DefinitionStatusBadge hasSnapshot={period.has_snapshot} /></td>
-                <td className="px-3 py-2 text-right">
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onEdit(period);
-                      }}
-                      disabled={!canManage || period.has_snapshot || busyId}
-                    >
-                      Editar
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-lg border border-rose-300 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onDelete(period);
-                      }}
-                      disabled={!canDelete || period.has_snapshot || deleting || busyId}
-                    >
-                      {deleting ? 'Eliminando...' : 'Eliminar'}
-                    </button>
+                <td className="px-3 py-2 font-medium text-slate-800">{definition.period_code}</td>
+                <td className="px-3 py-2 text-slate-700">{definition.name}</td>
+                <td className="px-3 py-2 text-slate-600">{definition.start_date} → {definition.end_date}</td>
+                <td className="px-3 py-2 text-slate-600">{definition.cutoff_date}</td>
+                <td className="px-3 py-2">
+                  <DefinitionStatusBadge hasSnapshot={definition.has_snapshot} snapshotStatusCode={definition.snapshot_status_code} />
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex justify-end gap-2">
+                    {canManage ? (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onEdit(definition);
+                        }}
+                        className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        Editar
+                      </button>
+                    ) : null}
+
+                    {canDelete ? (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onDelete(definition);
+                        }}
+                        disabled={busyId === `delete-definition:${definition.id}` || definition.has_snapshot}
+                        className="rounded-lg border border-rose-300 bg-white px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {busyId === `delete-definition:${definition.id}` ? 'Eliminando...' : 'Eliminar'}
+                      </button>
+                    ) : null}
                   </div>
                 </td>
               </tr>
@@ -193,79 +193,90 @@ function SnapshotsTable({
   busyId,
 }) {
   if (!periods.length) {
-    return <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">Aún no hay snapshots de periodos financieros registrados para este proyecto.</div>;
+    return (
+      <div className="rounded-xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">
+        Aún no hay snapshots financieros registrados.
+      </div>
+    );
   }
 
   return (
-    <div className="overflow-x-auto rounded-2xl border border-slate-200">
+    <div className="overflow-hidden rounded-xl border border-slate-200">
       <table className="min-w-full divide-y divide-slate-200 text-sm">
-        <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+        <thead className="bg-slate-50 text-slate-600">
           <tr>
-            <th className="px-3 py-2">Código</th>
-            <th className="px-3 py-2">Nombre</th>
-            <th className="px-3 py-2">Fecha snapshot</th>
-            <th className="px-3 py-2">Estado</th>
-            <th className="px-3 py-2">Actividades</th>
-            <th className="px-3 py-2 text-right">Acciones</th>
+            <th className="px-3 py-2 text-left font-medium">Periodo</th>
+            <th className="px-3 py-2 text-left font-medium">Snapshot</th>
+            <th className="px-3 py-2 text-left font-medium">EV</th>
+            <th className="px-3 py-2 text-left font-medium">Avance</th>
+            <th className="px-3 py-2 text-left font-medium">Estado</th>
+            <th className="px-3 py-2 text-right font-medium">Acciones</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100 bg-white">
           {periods.map((period) => {
-            const selected = selectedId === period.id;
-            const closing = busyId === `close:${period.id}`;
-            const reopening = busyId === `reopen:${period.id}`;
-            const deleting = busyId === `delete:${period.id}`;
-            const isEditable = ['open', 'reopened'].includes(period.status_code);
+            const isSelected = selectedId === period.id;
+            const isClosed = String(period.status_code || '').toLowerCase() === 'closed';
 
             return (
               <tr
                 key={period.id}
-                className={selected ? 'bg-blue-50/70' : 'hover:bg-slate-50'}
+                className={isSelected ? 'bg-sky-50' : ''}
                 onClick={() => onSelect(period.id)}
               >
-                <td className="px-3 py-2 font-medium text-slate-900">{period.period_code}</td>
-                <td className="px-3 py-2 text-slate-700">{period.name}</td>
-                <td className="px-3 py-2 text-slate-700">{period.snapshot_date || '—'}</td>
-                <td className="px-3 py-2"><StatusBadge status={period.status_code} /></td>
-                <td className="px-3 py-2 text-slate-700">{formatNumber(period.summary_activity_count)}</td>
-                <td className="px-3 py-2 text-right">
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                    {isEditable ? (
+                <td className="px-3 py-2 text-slate-700">
+                  <div className="font-medium text-slate-800">{period.period_code}</div>
+                  <div className="text-xs text-slate-500">{period.start_date} → {period.end_date}</div>
+                </td>
+                <td className="px-3 py-2 text-slate-600">{period.snapshot_date || '—'}</td>
+                <td className="px-3 py-2 text-slate-700">{formatNumber(period.summary_ev_amount)}</td>
+                <td className="px-3 py-2 text-slate-700">{formatNumber(period.summary_weighted_progress)}%</td>
+                <td className="px-3 py-2">
+                  <StatusBadge status={period.status_code} />
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex justify-end gap-2">
+                    {canClose ? (
                       <button
                         type="button"
-                        className="rounded-lg border border-emerald-300 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
                         onClick={(event) => {
                           event.stopPropagation();
                           onClose(period);
                         }}
-                        disabled={!canClose || closing || busyId}
+                        disabled={busyId === `close:${period.id}` || isClosed}
+                        className="rounded-lg border border-emerald-300 bg-white px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {closing ? 'Cerrando...' : 'Cerrar'}
+                        {busyId === `close:${period.id}` ? 'Cerrando...' : 'Cerrar'}
                       </button>
-                    ) : (
+                    ) : null}
+
+                    {canReopen ? (
                       <button
                         type="button"
-                        className="rounded-lg border border-amber-300 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-60"
                         onClick={(event) => {
                           event.stopPropagation();
                           onReopen(period);
                         }}
-                        disabled={!canReopen || reopening || busyId}
+                        disabled={busyId === `reopen:${period.id}` || !isClosed}
+                        className="rounded-lg border border-amber-300 bg-white px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {reopening ? 'Reabriendo...' : 'Reabrir'}
+                        {busyId === `reopen:${period.id}` ? 'Reabriendo...' : 'Reabrir'}
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      className="rounded-lg border border-rose-300 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onDelete(period);
-                      }}
-                      disabled={!canDelete || period.status_code === 'closed' || deleting || busyId}
-                    >
-                      {deleting ? 'Eliminando...' : 'Eliminar'}
-                    </button>
+                    ) : null}
+
+                    {canDelete ? (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onDelete(period);
+                        }}
+                        disabled={busyId === `delete:${period.id}` || isClosed}
+                        className="rounded-lg border border-rose-300 bg-white px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {busyId === `delete:${period.id}` ? 'Eliminando...' : 'Eliminar'}
+                      </button>
+                    ) : null}
                   </div>
                 </td>
               </tr>
@@ -277,43 +288,79 @@ function SnapshotsTable({
   );
 }
 
-function SnapshotsTableDetail({ snapshots }) {
-  if (!snapshots.length) {
-    return <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">La fotografía de actividades aparecerá cuando captures el periodo financiero.</div>;
+function SnapshotDetail({ period, snapshots, loading }) {
+  if (loading) {
+    return <InlineAlert tone="info">Cargando detalle del snapshot...</InlineAlert>;
+  }
+
+  if (!period) {
+    return (
+      <div className="rounded-xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">
+        Selecciona un snapshot financiero para revisar su detalle.
+      </div>
+    );
   }
 
   return (
-    <div className="overflow-x-auto rounded-2xl border border-slate-200">
-      <table className="min-w-full divide-y divide-slate-200 text-sm">
-        <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-          <tr>
-            <th className="px-3 py-2">WBS</th>
-            <th className="px-3 py-2">Actividad</th>
-            <th className="px-3 py-2">Estado</th>
-            <th className="px-3 py-2 text-right">Avance</th>
-            <th className="px-3 py-2 text-right">HH Ppto</th>
-            <th className="px-3 py-2 text-right">Costo Ppto</th>
-            <th className="px-3 py-2 text-right">LB Costo</th>
-            <th className="px-3 py-2 text-right">EV</th>
-            <th className="px-3 py-2">Rango</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100 bg-white">
-          {snapshots.map((item) => (
-            <tr key={item.id} className="hover:bg-slate-50">
-              <td className="px-3 py-2 text-slate-700">{item.wbs_code || '—'} {item.wbs_name ? `· ${item.wbs_name}` : ''}</td>
-              <td className="px-3 py-2 text-slate-700">{item.activity_code || '—'} {item.activity_name ? `· ${item.activity_name}` : ''}</td>
-              <td className="px-3 py-2 text-slate-700">{item.status_code || '—'}</td>
-              <td className="px-3 py-2 text-right text-slate-700">{formatNumber(item.progress_percent)}%</td>
-              <td className="px-3 py-2 text-right text-slate-700">{formatNumber(item.budget_hours)}</td>
-              <td className="px-3 py-2 text-right text-slate-700">{formatNumber(item.budget_cost)}</td>
-              <td className="px-3 py-2 text-right text-slate-700">{formatNumber(item.baseline_budget_cost)}</td>
-              <td className="px-3 py-2 text-right text-slate-700">{formatNumber(item.ev_amount)}</td>
-              <td className="px-3 py-2 text-slate-700">{item.start_date || '—'} → {item.end_date || '—'}</td>
+    <div className="space-y-4">
+      <div className="grid gap-4 md:grid-cols-4">
+        <MetricCard label="Actividades" value={period.summary_activity_count || 0} helper="Actividades incluidas" tone="slate" />
+        <MetricCard label="EV" value={formatNumber(period.summary_ev_amount)} helper="EV monetario acumulado" tone="emerald" />
+        <MetricCard label="Avance" value={`${formatNumber(period.summary_weighted_progress)}%`} helper="Avance ponderado" tone="blue" />
+        <MetricCard label="Completadas" value={period.summary_completed_activities || 0} helper="Actividades completas" tone="amber" />
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+        <div><strong>Periodo:</strong> {period.period_code} · {period.name}</div>
+        <div className="mt-1"><strong>Rango:</strong> {period.start_date} → {period.end_date}</div>
+        <div className="mt-1"><strong>Snapshot:</strong> {period.snapshot_date || '—'}</div>
+        <div className="mt-1"><strong>Estado:</strong> {period.status_code || '—'}</div>
+        {period.close_notes ? <div className="mt-1"><strong>Notas:</strong> {period.close_notes}</div> : null}
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-slate-200">
+        <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <thead className="bg-slate-50 text-slate-600">
+            <tr>
+              <th className="px-3 py-2 text-left font-medium">WBS</th>
+              <th className="px-3 py-2 text-left font-medium">Actividad</th>
+              <th className="px-3 py-2 text-left font-medium">Inicio</th>
+              <th className="px-3 py-2 text-left font-medium">Fin</th>
+              <th className="px-3 py-2 text-left font-medium">HH</th>
+              <th className="px-3 py-2 text-left font-medium">Costo</th>
+              <th className="px-3 py-2 text-left font-medium">LB HH</th>
+              <th className="px-3 py-2 text-left font-medium">LB Costo</th>
+              <th className="px-3 py-2 text-left font-medium">Progreso</th>
+              <th className="px-3 py-2 text-left font-medium">EV</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-slate-100 bg-white">
+            {snapshots.length ? snapshots.map((snapshot) => (
+              <tr key={snapshot.id}>
+                <td className="px-3 py-2 text-slate-600">{snapshot.wbs_code || '—'}</td>
+                <td className="px-3 py-2 text-slate-700">
+                  <div className="font-medium text-slate-800">{snapshot.activity_code || '—'}</div>
+                  <div className="text-xs text-slate-500">{snapshot.activity_name || '—'}</div>
+                </td>
+                <td className="px-3 py-2 text-slate-600">{snapshot.start_date || '—'}</td>
+                <td className="px-3 py-2 text-slate-600">{snapshot.end_date || '—'}</td>
+                <td className="px-3 py-2 text-slate-700">{formatNumber(snapshot.budget_hours)}</td>
+                <td className="px-3 py-2 text-slate-700">{formatNumber(snapshot.budget_cost)}</td>
+                <td className="px-3 py-2 text-slate-700">{formatNumber(snapshot.baseline_budget_hours)}</td>
+                <td className="px-3 py-2 text-slate-700">{formatNumber(snapshot.baseline_budget_cost)}</td>
+                <td className="px-3 py-2 text-slate-700">{formatNumber(snapshot.progress_percent)}%</td>
+                <td className="px-3 py-2 text-slate-700">{formatNumber(snapshot.ev_amount)}</td>
+              </tr>
+            )) : (
+              <tr>
+                <td colSpan={10} className="px-3 py-6 text-center text-sm text-slate-500">
+                  Este snapshot no tiene actividades congeladas.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -325,6 +372,16 @@ export default function ControlPeriodsPage({
   canReopen = false,
   canDelete = false,
 }) {
+  const [definitionForm, setDefinitionForm] = useState(EMPTY_DEFINITION_FORM);
+  const [editingDefinitionId, setEditingDefinitionId] = useState('');
+  const [selectedDefinitionId, setSelectedDefinitionId] = useState('');
+  const [selectedPeriodId, setSelectedPeriodId] = useState('');
+  const [detail, setDetail] = useState({ period: null, snapshots: [] });
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [busyId, setBusyId] = useState('');
+  const [pageError, setPageError] = useState('');
+  const [pageSuccess, setPageSuccess] = useState('');
+
   const {
     periods,
     financialPeriods,
@@ -338,20 +395,8 @@ export default function ControlPeriodsPage({
     nextPendingFinancialPeriod,
   } = useControlPeriods(activeProject?.id);
 
-  const [definitionForm, setDefinitionForm] = useState(EMPTY_DEFINITION_FORM);
-  const [captureForm, setCaptureForm] = useState(EMPTY_CAPTURE_FORM);
-  const [editingDefinitionId, setEditingDefinitionId] = useState('');
-  const [selectedDefinitionId, setSelectedDefinitionId] = useState('');
-  const [selectedPeriodId, setSelectedPeriodId] = useState('');
-  const [detail, setDetail] = useState({ period: null, snapshots: [] });
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [pageError, setPageError] = useState('');
-  const [pageSuccess, setPageSuccess] = useState('');
-  const [busyId, setBusyId] = useState('');
-
   useEffect(() => {
     setDefinitionForm(EMPTY_DEFINITION_FORM);
-    setCaptureForm(EMPTY_CAPTURE_FORM);
     setEditingDefinitionId('');
     setSelectedDefinitionId('');
     setSelectedPeriodId('');
@@ -363,7 +408,6 @@ export default function ControlPeriodsPage({
   useEffect(() => {
     if (!financialPeriods.length) {
       setSelectedDefinitionId('');
-      setCaptureForm((current) => ({ ...current, financial_period_id: '', snapshot_date: '' }));
       return;
     }
 
@@ -372,21 +416,10 @@ export default function ControlPeriodsPage({
       ? preferred
       : nextPendingFinancialPeriod?.id || financialPeriods[0].id;
 
-    setSelectedDefinitionId((current) => (current && financialPeriods.some((item) => item.id === current) ? current : candidate));
+    setSelectedDefinitionId((current) => (
+      current && financialPeriods.some((item) => item.id === current) ? current : candidate
+    ));
   }, [activeProject?.id, financialPeriods, nextPendingFinancialPeriod]);
-
-  useEffect(() => {
-    const selected = financialPeriods.find((item) => item.id === selectedDefinitionId) || null;
-    setPreferredFinancialPeriodId(activeProject?.id, selected?.id || '');
-    setCaptureForm((current) => {
-      const sameSelection = current.financial_period_id === (selected?.id || '');
-      return {
-        ...current,
-        financial_period_id: selected?.id || '',
-        snapshot_date: sameSelection && current.snapshot_date ? current.snapshot_date : selected?.cutoff_date || '',
-      };
-    });
-  }, [activeProject?.id, financialPeriods, selectedDefinitionId]);
 
   useEffect(() => {
     if (!periods.length) {
@@ -436,22 +469,12 @@ export default function ControlPeriodsPage({
     };
   }, [loadPeriodDetail, selectedPeriodId]);
 
-  const summary = useMemo(() => {
-    const totalDefinitions = financialPeriods.length;
-    const pendingDefinitions = financialPeriods.filter((item) => !item.has_snapshot).length;
-    const capturedDefinitions = financialPeriods.filter((item) => item.has_snapshot).length;
-    const totalSnapshots = periods.length;
-
-    return {
-      totalDefinitions,
-      pendingDefinitions,
-      capturedDefinitions,
-      totalSnapshots,
-    };
-  }, [financialPeriods, periods]);
-
-  const selectedDefinition = financialPeriods.find((item) => item.id === selectedDefinitionId) || null;
-  const selectedPeriod = detail.period || periods.find((item) => item.id === selectedPeriodId) || null;
+  const summary = useMemo(() => ({
+    totalDefinitions: financialPeriods.length,
+    pendingDefinitions: financialPeriods.filter((item) => !item.has_snapshot).length,
+    capturedDefinitions: financialPeriods.filter((item) => item.has_snapshot).length,
+    totalSnapshots: periods.length,
+  }), [financialPeriods, periods]);
 
   const handleDefinitionFormChange = useCallback((field, value) => {
     setDefinitionForm((current) => {
@@ -470,17 +493,14 @@ export default function ControlPeriodsPage({
           field === 'cutoff_date' ? value : next.cutoff_date,
         );
 
-        if (!current.period_code || current.period_code === derivePeriodCode(current.start_date, current.cutoff_date)) {
+        const currentDerivedCode = derivePeriodCode(current.start_date, current.cutoff_date);
+        if (!current.period_code || current.period_code === currentDerivedCode) {
           next.period_code = generatedCode;
         }
       }
 
       return next;
     });
-  }, []);
-
-  const handleCaptureFormChange = useCallback((field, value) => {
-    setCaptureForm((current) => ({ ...current, [field]: value }));
   }, []);
 
   const handleEditDefinition = useCallback((definition) => {
@@ -562,45 +582,20 @@ export default function ControlPeriodsPage({
     }
   }, [reloadFinancialPeriods, selectedDefinitionId]);
 
-  const handleCaptureSnapshot = useCallback(async () => {
-    if (!activeProject?.id || !captureForm.financial_period_id) return;
-
-    setPageError('');
-    setPageSuccess('');
-    setBusyId('capture');
-
-    try {
-      const response = await controlPeriodsApi.capture({
-        project_id: activeProject.id,
-        financial_period_id: captureForm.financial_period_id,
-        snapshot_date: captureForm.snapshot_date,
-        close_notes: captureForm.close_notes,
-      });
-
-      setPageSuccess('Snapshot del periodo financiero guardado correctamente.');
-      setCaptureForm((current) => ({ ...current, close_notes: '' }));
-      await Promise.all([reloadFinancialPeriods(), reloadPeriods()]);
-      if (response?.period?.id) {
-        setSelectedPeriodId(response.period.id);
-      }
-    } catch (requestError) {
-      setPageError(getErrorMessage(requestError, 'No se pudo capturar el periodo financiero.'));
-    } finally {
-      setBusyId('');
-    }
-  }, [activeProject?.id, captureForm, reloadFinancialPeriods, reloadPeriods]);
-
   const handleClosePeriod = useCallback(async (period) => {
     setPageError('');
     setPageSuccess('');
     setBusyId(`close:${period.id}`);
+
     try {
       const response = await controlPeriodsApi.close(period.id, {
         snapshot_date: period.snapshot_date || period.financial_period?.cutoff_date || period.end_date,
         close_notes: period.close_notes || '',
       });
+
       setPageSuccess('Snapshot cerrado y recalculado correctamente.');
       await Promise.all([reloadFinancialPeriods(), reloadPeriods()]);
+
       if (response?.period?.id) {
         setSelectedPeriodId(response.period.id);
       }
@@ -615,12 +610,15 @@ export default function ControlPeriodsPage({
     setPageError('');
     setPageSuccess('');
     setBusyId(`reopen:${period.id}`);
+
     try {
       const response = await controlPeriodsApi.reopen(period.id, {
         close_notes: period.close_notes || '',
       });
+
       setPageSuccess('Snapshot reabierto correctamente.');
       await Promise.all([reloadFinancialPeriods(), reloadPeriods()]);
+
       if (response?.period?.id) {
         setSelectedPeriodId(response.period.id);
       }
@@ -637,11 +635,14 @@ export default function ControlPeriodsPage({
     setPageError('');
     setPageSuccess('');
     setBusyId(`delete:${period.id}`);
+
     try {
       await controlPeriodsApi.remove(period.id);
+
       if (selectedPeriodId === period.id) {
         setSelectedPeriodId('');
       }
+
       setPageSuccess('Snapshot eliminado correctamente.');
       await Promise.all([reloadFinancialPeriods(), reloadPeriods()]);
     } catch (requestError) {
@@ -667,6 +668,7 @@ export default function ControlPeriodsPage({
       {definitionsError ? <InlineAlert tone="warning">{definitionsError}</InlineAlert> : null}
       {pageError ? <InlineAlert tone="warning">{pageError}</InlineAlert> : null}
       {pageSuccess ? <InlineAlert tone="success">{pageSuccess}</InlineAlert> : null}
+      {definitionsLoading ? <InlineAlert tone="info">Actualizando definiciones de periodos financieros...</InlineAlert> : null}
 
       <div className="grid gap-4 md:grid-cols-4">
         <MetricCard label="Definidos" value={summary.totalDefinitions} helper="Periodos financieros del proyecto" tone="blue" />
@@ -689,6 +691,7 @@ export default function ControlPeriodsPage({
               placeholder="PF-01"
             />
           </label>
+
           <label className="space-y-1 text-sm text-slate-600">
             <span className="font-medium text-slate-700">Nombre</span>
             <input
@@ -698,6 +701,7 @@ export default function ControlPeriodsPage({
               placeholder="Semana 01"
             />
           </label>
+
           <label className="space-y-1 text-sm text-slate-600">
             <span className="font-medium text-slate-700">Inicio</span>
             <input
@@ -707,6 +711,7 @@ export default function ControlPeriodsPage({
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
             />
           </label>
+
           <label className="space-y-1 text-sm text-slate-600">
             <span className="font-medium text-slate-700">Fecha de corte</span>
             <input
@@ -716,6 +721,7 @@ export default function ControlPeriodsPage({
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
             />
           </label>
+
           <label className="space-y-1 text-sm text-slate-600">
             <span className="font-medium text-slate-700">Fin</span>
             <input
@@ -740,6 +746,7 @@ export default function ControlPeriodsPage({
                 ? 'Actualizar periodo financiero'
                 : 'Crear periodo financiero'}
           </button>
+
           {editingDefinitionId ? (
             <button
               type="button"
@@ -767,14 +774,17 @@ export default function ControlPeriodsPage({
 
       <SectionCard
         title="Captura del periodo financiero"
-        description="El guardado del snapshot financiero ahora se realiza desde la pestaña Actividades, usando el periodo financiero seleccionado para el reporte semanal."
+        description="El guardado del snapshot financiero se realiza desde la pestaña Actividades, usando el periodo financiero seleccionado para el reporte semanal."
       >
         <InlineAlert tone="info">
           Usa la pestaña <strong>Actividades</strong> para seleccionar el periodo financiero, actualizar el avance acumulado y guardar el snapshot con el EV monetario del periodo.
         </InlineAlert>
       </SectionCard>
 
-      <SectionCard title="Snapshots registrados" description="Revisa el histórico congelado del proyecto. Los snapshots cerrados se pueden reabrir para correcciones antes de volver a cerrarse.">
+      <SectionCard
+        title="Snapshots registrados"
+        description="Revisa el histórico congelado del proyecto. Los snapshots cerrados se pueden reabrir para correcciones antes de volver a cerrarse."
+      >
         {loading ? <InlineAlert tone="info" className="mb-3">Cargando snapshots...</InlineAlert> : null}
         <SnapshotsTable
           periods={periods}
@@ -794,18 +804,7 @@ export default function ControlPeriodsPage({
         title="Detalle del snapshot seleccionado"
         description="Visor del avance, presupuesto y EV congelados para el periodo financiero elegido."
       >
-        {detailLoading ? <InlineAlert tone="info" className="mb-3">Cargando detalle del snapshot...</InlineAlert> : null}
-
-        {selectedPeriod ? (
-          <div className="mb-4 grid gap-4 md:grid-cols-4">
-            <MetricCard label="Código" value={selectedPeriod.period_code} helper={selectedPeriod.name} tone="blue" />
-            <MetricCard label="Fecha snapshot" value={selectedPeriod.snapshot_date || '—'} helper={selectedPeriod.financial_period?.cutoff_date ? `Corte: ${selectedPeriod.financial_period.cutoff_date}` : 'Sin fecha de corte'} tone="slate" />
-            <MetricCard label="Avance ponderado" value={`${formatNumber(selectedPeriod.summary_weighted_progress)}%`} helper="Avance acumulado congelado" tone="amber" />
-            <MetricCard label="EV acumulado" value={formatNumber(selectedPeriod.summary_ev_amount)} helper="Valor ganado monetario congelado" tone="emerald" />
-          </div>
-        ) : null}
-
-        <SnapshotsTableDetail snapshots={detail.snapshots} />
+        <SnapshotDetail period={detail.period} snapshots={detail.snapshots} loading={detailLoading} />
       </SectionCard>
     </div>
   );

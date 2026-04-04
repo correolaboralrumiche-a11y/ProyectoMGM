@@ -7,6 +7,7 @@ import ProjectsPage from './pages/ProjectsPage.jsx';
 import WBSPage from './pages/WBSPage.jsx';
 import ActivitiesPage from './pages/ActivitiesPage.jsx';
 import ControlPeriodsPage from './pages/ControlPeriodsPage.jsx';
+import TemplatesPage from './pages/TemplatesPage.jsx';
 import DeliverablesPage from './pages/DeliverablesPage.jsx';
 import AuditPage from './pages/AuditPage.jsx';
 import CatalogsPage from './pages/CatalogsPage.jsx';
@@ -21,9 +22,8 @@ const MODULE_DEFINITIONS = {
     label: 'Control de Proyectos',
     eyebrow: 'Módulo 1',
     description:
-      'Gestiona proyectos, WBS, actividades, períodos financieros y el seguimiento operativo del proyecto activo.',
-    icon: '📊',
-    preferredTabs: ['projects', 'wbs', 'activities', 'control_periods', 'catalogs', 'audit'],
+      'Gestiona proyectos, WBS, actividades, períodos financieros, plantillas y el seguimiento operativo del proyecto activo.',
+    preferredTabs: ['projects', 'wbs', 'activities', 'control_periods', 'templates', 'catalogs', 'audit'],
   },
   document_control: {
     key: 'document_control',
@@ -31,17 +31,14 @@ const MODULE_DEFINITIONS = {
     eyebrow: 'Módulo 2',
     description:
       'Registra y controla entregables, códigos documentarios, revisiones y respuestas.',
-    icon: '📄',
     preferredTabs: ['deliverables', 'catalogs', 'audit'],
   },
 };
 
 function LoadingScreen() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100 p-6">
-      <div className="rounded-2xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
-        <div className="text-sm font-medium text-slate-700">Cargando seguridad ERP...</div>
-      </div>
+    <div className="mx-auto max-w-2xl rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-sm">
+      <div className="text-sm font-medium text-slate-500">Cargando seguridad ERP...</div>
     </div>
   );
 }
@@ -52,6 +49,13 @@ function getAllVisibleTabs(permissions) {
   if (permissions.wbs.read) tabs.push('wbs');
   if (permissions.activities.read) tabs.push('activities');
   if (permissions.controlPeriods.read) tabs.push('control_periods');
+  const hasProjectControlAccess =
+    permissions.projects.read ||
+    permissions.wbs.read ||
+    permissions.activities.read ||
+    permissions.controlPeriods.read ||
+    permissions.layoutTemplates.read;
+  if (hasProjectControlAccess) tabs.push('templates');
   if (permissions.deliverables.read) tabs.push('deliverables');
   if (permissions.catalogs.read) tabs.push('catalogs');
   if (permissions.audit.read) tabs.push('audit');
@@ -65,6 +69,7 @@ function getAvailableModules(permissions) {
     permissions.wbs.read ||
     permissions.activities.read ||
     permissions.controlPeriods.read ||
+    permissions.layoutTemplates.read ||
     permissions.catalogs.read ||
     permissions.audit.read
   ) {
@@ -79,10 +84,8 @@ function getAvailableModules(permissions) {
 function getVisibleTabsForModule(allVisibleTabs, activeModule) {
   const visibility = new Set(allVisibleTabs || []);
   if (!activeModule) return [];
-
   const moduleConfig = MODULE_DEFINITIONS[activeModule];
   if (!moduleConfig) return [];
-
   return moduleConfig.preferredTabs.filter((tab) => visibility.has(tab));
 }
 
@@ -100,9 +103,9 @@ function getProjectOperationalLock(activeProject, isAdmin) {
 function Pill({ label, value }) {
   if (!value) return null;
   return (
-    <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
+    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
       {label}: {value}
-    </div>
+    </span>
   );
 }
 
@@ -110,10 +113,10 @@ function ActiveProjectSummary({ activeProject, loading, activeModule }) {
   const helperText =
     activeModule === 'document_control'
       ? 'El proyecto activo define el contexto del registro documentario.'
-      : 'Selecciona un proyecto para trabajar sobre su WBS, actividades y períodos financieros.';
+      : 'Selecciona un proyecto para trabajar sobre su WBS, actividades, periodos financieros y plantillas.';
 
   return (
-    <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Proyecto activo</div>
       <div className="mt-2 text-lg font-semibold text-slate-900">
         {activeProject ? activeProject.name : loading ? 'Cargando...' : 'Ninguno'}
@@ -122,10 +125,11 @@ function ActiveProjectSummary({ activeProject, loading, activeModule }) {
         {activeProject ? activeProject.description || 'Sin descripción' : helperText}
       </div>
       {activeProject ? (
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Pill label="Estado" value={activeProject.status_name || activeProject.status_code || activeProject.status} />
-          <Pill label="Prioridad" value={activeProject.priority_name || activeProject.priority_code} />
-          <Pill label="Moneda" value={activeProject.currency_code || activeProject.currency_name} />
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Pill label="Código" value={activeProject.code} />
+          <Pill label="Estado" value={activeProject.status_code || activeProject.status} />
+          <Pill label="Prioridad" value={activeProject.priority_code} />
+          <Pill label="Moneda" value={activeProject.currency_code} />
         </div>
       ) : null}
     </div>
@@ -134,7 +138,6 @@ function ActiveProjectSummary({ activeProject, loading, activeModule }) {
 
 function ModuleCard({ moduleKey, disabled, onSelect }) {
   const module = MODULE_DEFINITIONS[moduleKey];
-
   return (
     <button
       type="button"
@@ -147,49 +150,40 @@ function ModuleCard({ moduleKey, disabled, onSelect }) {
           : 'border-slate-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md',
       ].join(' ')}
     >
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{module.eyebrow}</div>
-          <div className="mt-2 text-2xl font-semibold text-slate-900">{module.label}</div>
-          <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600">{module.description}</p>
-        </div>
-        <div className="text-4xl leading-none">{module.icon}</div>
-      </div>
-
-      <div className="mt-6 inline-flex items-center rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{module.eyebrow}</div>
+      <div className="mt-2 text-xl font-semibold text-slate-900">{module.label}</div>
+      <div className="mt-2 text-sm leading-6 text-slate-600">{module.description}</div>
+      <div className="mt-6 text-sm font-medium text-blue-700">
         {disabled ? 'Sin acceso disponible' : 'Ingresar al módulo'}
       </div>
     </button>
   );
 }
 
-function ModuleSelectionScreen({ user, onLogout, availableModules, onSelectModule }) {
+function ModuleSelectionScreen({ availableModules, onSelectModule }) {
   return (
-    <AppShell user={user} onLogout={onLogout}>
-      <div className="mx-auto max-w-5xl py-6">
-        <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">ProyectoMGM</div>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900">Selecciona el módulo al que deseas ingresar</h1>
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-            La aplicación se divide en dos frentes operativos. Ingresa al módulo de control del proyecto o al módulo de
-            control documentario según el trabajo que vayas a realizar.
-          </p>
-
-          <div className="mt-8 grid gap-4 md:grid-cols-2">
-            <ModuleCard
-              moduleKey="project_control"
-              disabled={!availableModules.includes('project_control')}
-              onSelect={onSelectModule}
-            />
-            <ModuleCard
-              moduleKey="document_control"
-              disabled={!availableModules.includes('document_control')}
-              onSelect={onSelectModule}
-            />
-          </div>
-        </div>
+    <div className="mx-auto max-w-5xl space-y-6">
+      <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+        <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">ProyectoMGM</div>
+        <h1 className="mt-3 text-3xl font-semibold text-slate-900">Selecciona el módulo al que deseas ingresar</h1>
+        <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
+          La aplicación se divide en dos frentes operativos. Ingresa al módulo de control del proyecto
+          o al módulo de control documentario según el trabajo que vayas a realizar.
+        </p>
       </div>
-    </AppShell>
+      <div className="grid gap-6 md:grid-cols-2">
+        <ModuleCard
+          moduleKey="project_control"
+          disabled={!availableModules.includes('project_control')}
+          onSelect={onSelectModule}
+        />
+        <ModuleCard
+          moduleKey="document_control"
+          disabled={!availableModules.includes('document_control')}
+          onSelect={onSelectModule}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -237,6 +231,12 @@ function AuthenticatedApp({ user, onLogout }) {
         close: can('control_periods.close'),
         reopen: can('control_periods.reopen'),
         delete: can('control_periods.delete'),
+      },
+      layoutTemplates: {
+        read: can('layout_templates.read'),
+        create: can('layout_templates.create'),
+        update: can('layout_templates.update'),
+        delete: can('layout_templates.delete'),
       },
       deliverables: {
         read: can('deliverables.read'),
@@ -287,13 +287,19 @@ function AuthenticatedApp({ user, onLogout }) {
     }
   }, [activeModule, activeTab, availableModules, visibleTabs]);
 
-  const handleProjectChanged = useCallback(async (projectId) => {
-    setActiveProjectId(projectId);
-  }, [setActiveProjectId]);
+  const handleProjectChanged = useCallback(
+    async (projectId) => {
+      setActiveProjectId(projectId);
+    },
+    [setActiveProjectId],
+  );
 
-  const handleProjectListChanged = useCallback(async (preferredProjectId) => {
-    await reloadProjects(preferredProjectId);
-  }, [reloadProjects]);
+  const handleProjectListChanged = useCallback(
+    async (preferredProjectId) => {
+      await reloadProjects(preferredProjectId);
+    },
+    [reloadProjects],
+  );
 
   const handleWbsChanged = useCallback(async () => {
     if (!activeProjectId) return;
@@ -325,104 +331,109 @@ function AuthenticatedApp({ user, onLogout }) {
           : '';
 
   if (!activeModule) {
-    return (
-      <ModuleSelectionScreen
-        user={user}
-        onLogout={onLogout}
-        availableModules={availableModules}
-        onSelectModule={handleSelectModule}
-      />
-    );
+    return <ModuleSelectionScreen availableModules={availableModules} onSelectModule={handleSelectModule} />;
   }
 
   return (
     <AppShell user={user} onLogout={onLogout}>
-      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-            {MODULE_DEFINITIONS[activeModule]?.eyebrow}
+      <div className="space-y-6">
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {MODULE_DEFINITIONS[activeModule]?.eyebrow}
+              </div>
+              <h1 className="mt-2 text-2xl font-semibold text-slate-900">
+                {MODULE_DEFINITIONS[activeModule]?.label}
+              </h1>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                {MODULE_DEFINITIONS[activeModule]?.description}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveModule(null)}
+              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Cambiar de módulo
+            </button>
           </div>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
-            {MODULE_DEFINITIONS[activeModule]?.label}
-          </h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            {MODULE_DEFINITIONS[activeModule]?.description}
-          </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setActiveModule(null)}
-          className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
-          Cambiar de módulo
-        </button>
-      </div>
 
-      <ActiveProjectSummary activeProject={activeProject} loading={projectsLoading} activeModule={activeModule} />
+        <ActiveProjectSummary activeProject={activeProject} loading={projectsLoading} activeModule={activeModule} />
 
-      <Tabs activeTab={activeTab} onChange={setActiveTab} visibleTabs={visibleTabs} activeModule={activeModule} />
+        <Tabs activeTab={activeTab} onChange={setActiveTab} visibleTabs={visibleTabs} />
 
-      {activeTabError ? <InlineAlert tone="warning" className="mt-4">{activeTabError}</InlineAlert> : null}
+        {activeTabError ? <InlineAlert variant="error">{activeTabError}</InlineAlert> : null}
 
-      <div className="mt-4">
         {activeTab === 'projects' && permissions.projects.read ? (
           <ProjectsPage
             projects={projects}
             activeProjectId={activeProjectId}
-            onProjectChange={handleProjectChanged}
-            onProjectsChanged={handleProjectListChanged}
-            canCreate={permissions.projects.create}
-            canUpdate={permissions.projects.update}
-            canDelete={permissions.projects.delete}
-            canCreateBaseline={permissions.baselines.create}
-            canDeleteBaseline={permissions.baselines.delete}
+            activeProject={activeProject}
+            onProjectChanged={handleProjectChanged}
+            onProjectListChanged={handleProjectListChanged}
+            permissions={permissions}
+            operationalLock={operationalLock}
           />
         ) : null}
 
         {activeTab === 'wbs' && permissions.wbs.read ? (
           <WBSPage
+            activeProjectId={activeProjectId}
             activeProject={activeProject}
             tree={tree}
-            canCreate={permissions.wbs.create}
-            canUpdate={permissions.wbs.update}
-            canDelete={permissions.wbs.delete}
-            canReorder={permissions.wbs.reorder}
+            loading={wbsLoading}
+            error={wbsError}
+            onChanged={handleWbsChanged}
+            permissions={permissions}
             operationalLock={operationalLock}
-            onTreeChanged={handleWbsChanged}
           />
         ) : null}
 
         {activeTab === 'activities' && permissions.activities.read ? (
           <ActivitiesPage
+            activeProjectId={activeProjectId}
             activeProject={activeProject}
             tree={tree}
             activities={activities}
-            reloadActivities={handleActivitiesChanged}
+            loading={activitiesLoading}
+            error={activitiesError}
+            onChanged={handleActivitiesChanged}
+            permissions={permissions}
+            operationalLock={operationalLock}
           />
         ) : null}
 
         {activeTab === 'control_periods' && permissions.controlPeriods.read ? (
           <ControlPeriodsPage
+            activeProjectId={activeProjectId}
             activeProject={activeProject}
-            canCreate={permissions.controlPeriods.create}
-            canClose={permissions.controlPeriods.close}
-            canReopen={permissions.controlPeriods.reopen}
-            canDelete={permissions.controlPeriods.delete}
+            permissions={permissions}
+            operationalLock={operationalLock}
+          />
+        ) : null}
+
+        {activeTab === 'templates' && permissions.layoutTemplates.read ? (
+          <TemplatesPage
+            activeProjectId={activeProjectId}
+            activeProject={activeProject}
+            permissions={permissions}
+            operationalLock={operationalLock}
           />
         ) : null}
 
         {activeTab === 'deliverables' && permissions.deliverables.read ? (
           <DeliverablesPage
+            activeProjectId={activeProjectId}
             activeProject={activeProject}
-            canCreate={permissions.deliverables.create}
-            canUpdate={permissions.deliverables.update}
-            canDelete={permissions.deliverables.delete}
-            canManageRevisions={permissions.deliverables.manageRevisions}
+            permissions={permissions}
+            operationalLock={operationalLock}
           />
         ) : null}
 
         {activeTab === 'catalogs' && permissions.catalogs.read ? (
-          <CatalogsPage canManage={permissions.catalogs.manage} />
+          <CatalogsPage permissions={permissions} />
         ) : null}
 
         {activeTab === 'audit' && permissions.audit.read ? <AuditPage /> : null}

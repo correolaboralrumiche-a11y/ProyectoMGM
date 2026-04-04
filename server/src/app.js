@@ -15,6 +15,7 @@ import activitiesRoutes from './modules/activities/activities.routes.js';
 import deliverablesRoutes from './modules/deliverables/deliverables.routes.js';
 import controlPeriodsRoutes from './modules/controlPeriods/controlPeriods.routes.js';
 import baselinesRoutes from './modules/baselines/baselines.routes.js';
+import layoutTemplatesRoutes from './modules/layoutTemplates/layoutTemplates.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -28,7 +29,6 @@ function buildCorsOptions() {
       if (allowAny || !origin || allowed.includes(origin)) {
         return callback(null, true);
       }
-
       return callback(new Error('CORS origin not allowed'));
     },
   };
@@ -101,6 +101,7 @@ app.use('/activities', activitiesRoutes);
 app.use('/deliverables', deliverablesRoutes);
 app.use('/control-periods', controlPeriodsRoutes);
 app.use('/baselines', baselinesRoutes);
+app.use('/layout-templates', layoutTemplatesRoutes);
 
 app.use((req, res) => {
   return res.status(404).json({

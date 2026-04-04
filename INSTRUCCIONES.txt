@@ -1,18 +1,17 @@
-INSTRUCCIONES DE ACTUALIZACIÓN — VERSIÓN ACTUAL
+INSTRUCCIONES DE ACTUALIZACIÓN — RELEASE DE CONSOLIDACIÓN
 
-Esta versión ya incorpora los cambios acumulados más recientes del sistema:
-- separación en dos módulos
+Esta versión consolida el ERP actual con:
+- Módulo 1: Control de Proyectos
+- Módulo 2: Control Documentario
 - baseline funcional
 - EV básico por actividad
 - períodos financieros definidos por proyecto
-- snapshot financiero desde Actividades
-- control documentario
-- persistencia de columnas en Actividades
+- snapshots financieros desde Actividades
+- pruebas de integración del dominio
 
 ----------------------------------------------------------------------
-1. SI YA REEMPLAZASTE LOS ARCHIVOS DE CÓDIGO
+1. SI REEMPLAZASTE ARCHIVOS DE CÓDIGO
 ----------------------------------------------------------------------
-
 Luego de copiar los archivos actualizados en tu proyecto:
 
 1. reinicia el backend
@@ -35,20 +34,29 @@ npm run dev
 ----------------------------------------------------------------------
 2. SI LA ENTREGA INCLUYE MIGRACIONES NUEVAS
 ----------------------------------------------------------------------
-
 Ejecuta también:
 
 ```bash
 cd server
 npx knex migrate:latest --env development
 npm run db:seed
+npm run platform:verify
 ```
 
 Haz esto cuando la entrega incluya:
 - tablas nuevas
 - columnas nuevas
 - permisos nuevos
-- seeds actualizados
+- catálogos nuevos
+- cambios de bootstrap
+
+En PowerShell, si `npx` o `npm` se bloquean por políticas de ejecución, usa:
+
+```bash
+npx.cmd knex migrate:latest --env development
+npm.cmd run db:seed
+npm.cmd run platform:verify
+```
 
 ----------------------------------------------------------------------
 3. FLUJO MÍNIMO DE PRUEBA RECOMENDADO
@@ -61,11 +69,12 @@ Haz esto cuando la entrega incluya:
 4. crear WBS
 5. crear actividades
 6. generar línea base
-7. ingresar avance en Actividades
-8. verificar que el EV se calcule contra el presupuesto base
-9. definir períodos financieros
+7. definir períodos financieros del proyecto
+8. ingresar avance en Actividades
+9. verificar que el EV se calcule contra el presupuesto base
 10. seleccionar un período financiero en Actividades
 11. guardar snapshot financiero desde Actividades
+12. revisar el snapshot en Periodos financieros
 
 ### Módulo 2 — Control Documentario
 1. entrar a Control Documentario
@@ -93,29 +102,48 @@ Haz esto cuando la entrega incluya:
 - verificar que el proyecto tenga períodos definidos
 - verificar que el período seleccionado aún no tenga snapshot
 - verificar que el backend esté reiniciado después de migraciones
+- verificar que `platform:verify` no reporte faltantes
+
+### Si falla Control Documentario
+- verificar unicidad del código documental
+- revisar catálogos de tipo, estado y códigos de respuesta
+- revisar permisos del usuario para revisiones
 
 ----------------------------------------------------------------------
 5. NOTA OPERATIVA
 ----------------------------------------------------------------------
-
 La pestaña Actividades es ahora el punto principal para:
 - registrar avance
+- revisar EV básico
 - seleccionar período financiero
 - guardar snapshot financiero
 
-La pestaña de Períodos Financieros debe usarse principalmente para:
+La pestaña de Periodos financieros debe usarse principalmente para:
 - definir períodos
 - revisar histórico
 - consultar snapshots ya generados
 
 ----------------------------------------------------------------------
-6. NOTA SOBRE README
+6. NOTA SOBRE LA RELEASE ACTUAL
 ----------------------------------------------------------------------
+La release actual debe considerarse una fase de consolidación.
 
-El archivo README.md ya fue actualizado para reflejar:
-- módulos actuales
-- baseline
-- EV
+Qué ya está listo:
+- separación por módulos
+- baseline funcional
+- EV básico
 - períodos financieros
-- control documentario
-- sprints recientes
+- control documentario de seguimiento
+- pruebas de integración del dominio
+
+Qué todavía no está implementado:
+- plantillas time-phased configurables
+- distribución temporal de HH y presupuesto de línea base
+- workflow documental completo
+- dashboards analíticos avanzados
+
+----------------------------------------------------------------------
+7. ARCHIVOS DE REFERENCIA
+----------------------------------------------------------------------
+- `README.md`: visión general, alcance y roadmap
+- `INSTRUCCIONES.txt`: guía rápida de actualización, pruebas y troubleshooting

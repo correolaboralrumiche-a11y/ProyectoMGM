@@ -7,6 +7,8 @@ const REQUIRED_TABLES = [
   'activity_progress_updates',
   'activity_actuals',
   'project_baselines',
+  'baseline_wbs',
+  'baseline_activities',
   'users',
   'roles',
   'permissions',
@@ -14,14 +16,29 @@ const REQUIRED_TABLES = [
   'role_permissions',
   'user_sessions',
   'audit_logs',
+  'deliverables',
+  'deliverable_revisions',
+  'project_financial_periods',
+  'project_control_periods',
+  'project_control_period_activity_snapshots',
+  'layout_templates',
+  'layout_template_columns',
 ];
 
 const REQUIRED_ROLES = ['admin', 'planner', 'viewer'];
+
 const REQUIRED_PERMISSIONS = [
   'projects.read',
   'wbs.read',
   'activities.read',
   'baselines.read',
+  'deliverables.read',
+  'control_periods.read',
+  'layout_templates.read',
+  'layout_templates.write',
+  'layout_templates.create',
+  'layout_templates.update',
+  'layout_templates.delete',
   'audit.read',
   'catalogs.read',
 ];

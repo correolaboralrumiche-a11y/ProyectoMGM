@@ -18,13 +18,20 @@ function BaselineBanner({ latestBaseline, baselineLoading, baselineError }) {
       </InlineAlert>
     );
   }
+
   if (baselineLoading) {
     return <InlineAlert tone="info" className="mb-3">Cargando línea base...</InlineAlert>;
   }
+
   if (baselineError) {
     return <InlineAlert tone="warning" className="mb-3">{baselineError}</InlineAlert>;
   }
-  return <InlineAlert tone="info" className="mb-3">Este proyecto no tiene línea base registrada. Sin línea base, el EV monetario será 0.</InlineAlert>;
+
+  return (
+    <InlineAlert tone="info" className="mb-3">
+      Este proyecto no tiene línea base registrada. Sin línea base, el EV monetario será 0.
+    </InlineAlert>
+  );
 }
 
 function getSelectionStorageKey(projectId) {
@@ -55,6 +62,96 @@ function getInitialSnapshotDate(financialPeriods, periodId) {
   return selected?.cutoff_date || '';
 }
 
+function useActivityCatalogs() {
+  const [catalogOptions, setCatalogOptions] = useState({
+    statuses: [],
+    activityTypes: [],
+    priorities: [],
+    disciplines: [],
+  });
+  const [catalogError, setCatalogError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCatalogs() {
+      try {
+        const [statuses, activityTypes, priorities, disciplines] = await Promise.all([
+          catalogsApi.get('activity-statuses', { includeInactive: false }),
+          catalogsApi.get('activity-types', { includeInactive: false }),
+          catalogsApi.get('activity-priorities', { includeInactive: false }),
+          catalogsApi.get('disciplines', { includeInactive: false }),
+        ]);
+
+        if (!cancelled) {
+          setCatalogOptions({
+            statuses: Array.isArray(statuses?.items) ? statuses.items : [],
+            activityTypes: Array.isArray(activityTypes?.items) ? activityTypes.items : [],
+            priorities: Array.isArray(priorities?.items) ? priorities.items : [],
+            disciplines: Array.isArray(disciplines?.items) ? disciplines.items : [],
+          });
+          setCatalogError('');
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setCatalogError(getErrorMessage(error, 'No se pudieron cargar los catálogos de actividades.'));
+        }
+      }
+    }
+
+    loadCatalogs();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return { catalogOptions, catalogError };
+}
+
+function useLatestBaselineActivities(activeProjectId, latestBaseline, loadBaselineDetail) {
+  const [baselineActivities, setBaselineActivities] = useState([]);
+  const [baselineDetailLoading, setBaselineDetailLoading] = useState(false);
+  const [baselineDetailError, setBaselineDetailError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLatestBaselineDetail() {
+      if (!activeProjectId || !latestBaseline?.id) {
+        setBaselineActivities([]);
+        setBaselineDetailLoading(false);
+        setBaselineDetailError('');
+        return;
+      }
+
+      setBaselineDetailLoading(true);
+      try {
+        const detail = await loadBaselineDetail(latestBaseline.id);
+        if (!cancelled) {
+          setBaselineActivities(Array.isArray(detail?.activities) ? detail.activities : []);
+          setBaselineDetailError('');
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setBaselineActivities([]);
+          setBaselineDetailError(getErrorMessage(error, 'No se pudo cargar el detalle de la línea base.'));
+        }
+      } finally {
+        if (!cancelled) {
+          setBaselineDetailLoading(false);
+        }
+      }
+    }
+
+    loadLatestBaselineDetail();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProjectId, latestBaseline?.id, loadBaselineDetail]);
+
+  return { baselineActivities, baselineDetailLoading, baselineDetailError };
+}
+
 function FinancialPeriodContext({
   activeProjectId,
   financialPeriods,
@@ -82,6 +179,7 @@ function FinancialPeriodContext({
       description="Selecciona el periodo financiero al que pertenece la actualización semanal y guarda aquí mismo la fotografía financiera del avance acumulado y del EV."
     >
       {definitionsError ? <InlineAlert tone="warning" className="mb-3">{definitionsError}</InlineAlert> : null}
+
       <div className="grid gap-4 xl:grid-cols-[minmax(0,340px),180px,minmax(0,1fr)]">
         <label className="space-y-2 text-sm text-slate-600">
           <span className="block font-medium text-slate-700">Periodo financiero objetivo</span>
@@ -117,7 +215,10 @@ function FinancialPeriodContext({
               <div className="font-medium text-slate-800">{selected.period_code} · {selected.name}</div>
               <div className="mt-2">Rango: <strong>{selected.start_date}</strong> → <strong>{selected.end_date}</strong></div>
               <div className="mt-1">Fecha de corte: <strong>{selected.cutoff_date}</strong></div>
-              <div className="mt-1">Estado: <strong>{selected.has_snapshot ? `Snapshot ${selected.snapshot_status_code || 'registrado'}` : 'Sin snapshot'}</strong></div>
+              <div className="mt-1">
+                Estado: <strong>{selected.has_snapshot ? `Snapshot ${selected.snapshot_status_code || 'registrado'}` : 'Sin snapshot'}</strong>
+              </div>
+
               <label className="mt-3 block space-y-2">
                 <span className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">Notas del snapshot</span>
                 <input
@@ -127,6 +228,7 @@ function FinancialPeriodContext({
                   className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
                 />
               </label>
+
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -137,6 +239,7 @@ function FinancialPeriodContext({
                   {captureBusy ? 'Guardando periodo financiero...' : 'Guardar periodo financiero'}
                 </button>
               </div>
+
               {captureHelper ? <div className="mt-3 text-xs text-slate-500">{captureHelper}</div> : null}
             </>
           ) : (
@@ -152,24 +255,22 @@ function FinancialPeriodContext({
 
 export default function ActivitiesPage({ activeProject, tree, activities, reloadActivities }) {
   const [requestedCellId, setRequestedCellId] = useState(null);
-  const [baselineActivities, setBaselineActivities] = useState([]);
-  const [baselineDetailLoading, setBaselineDetailLoading] = useState(false);
   const [pageError, setPageError] = useState('');
   const [pageSuccess, setPageSuccess] = useState('');
   const [captureBusy, setCaptureBusy] = useState(false);
-  const [catalogError, setCatalogError] = useState('');
-  const [catalogOptions, setCatalogOptions] = useState({
-    statuses: [],
-    activityTypes: [],
-    priorities: [],
-    disciplines: [],
-  });
   const [selectedFinancialPeriodId, setSelectedFinancialPeriodId] = useState('');
   const [snapshotDate, setSnapshotDate] = useState('');
   const [snapshotNotes, setSnapshotNotes] = useState('');
 
   const treeSignature = useMemo(() => getTreeSignature(tree), [tree]);
   const { latestBaseline, loading: baselinesLoading, error: baselinesError, loadBaselineDetail } = useBaselines(activeProject?.id);
+  const { catalogOptions, catalogError } = useActivityCatalogs();
+  const { baselineActivities, baselineDetailLoading, baselineDetailError } = useLatestBaselineActivities(
+    activeProject?.id,
+    latestBaseline,
+    loadBaselineDetail,
+  );
+
   const {
     financialPeriods,
     definitionsLoading,
@@ -180,69 +281,12 @@ export default function ActivitiesPage({ activeProject, tree, activities, reload
   } = useControlPeriods(activeProject?.id);
 
   useEffect(() => {
-    let cancelled = false;
-    async function loadCatalogs() {
-      try {
-        const [statuses, activityTypes, priorities, disciplines] = await Promise.all([
-          catalogsApi.get('activity-statuses', { includeInactive: false }),
-          catalogsApi.get('activity-types', { includeInactive: false }),
-          catalogsApi.get('activity-priorities', { includeInactive: false }),
-          catalogsApi.get('disciplines', { includeInactive: false }),
-        ]);
-        if (!cancelled) {
-          setCatalogOptions({
-            statuses: Array.isArray(statuses?.items) ? statuses.items : [],
-            activityTypes: Array.isArray(activityTypes?.items) ? activityTypes.items : [],
-            priorities: Array.isArray(priorities?.items) ? priorities.items : [],
-            disciplines: Array.isArray(disciplines?.items) ? disciplines.items : [],
-          });
-          setCatalogError('');
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setCatalogError(getErrorMessage(error, 'No se pudieron cargar los catálogos de actividades.'));
-        }
-      }
-    }
-    loadCatalogs();
-    return () => { cancelled = true; };
-  }, []);
+    if (!activeProject?.id || !reloadActivities) return;
 
-  useEffect(() => {
-    if (!activeProject?.id) return;
-    reloadActivities?.().catch((error) => {
+    reloadActivities().catch((error) => {
       console.error('No se pudo recargar actividades al cambiar el WBS', error);
     });
   }, [activeProject?.id, treeSignature, reloadActivities]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadLatestBaselineDetail() {
-      if (!latestBaseline?.id) {
-        setBaselineActivities([]);
-        setBaselineDetailLoading(false);
-        return;
-      }
-      setBaselineDetailLoading(true);
-      try {
-        const detail = await loadBaselineDetail(latestBaseline.id);
-        if (!cancelled) {
-          setBaselineActivities(Array.isArray(detail?.activities) ? detail.activities : []);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setBaselineActivities([]);
-          setPageError(getErrorMessage(error, 'No se pudo cargar el detalle de la línea base.'));
-        }
-      } finally {
-        if (!cancelled) setBaselineDetailLoading(false);
-      }
-    }
-
-    setPageError('');
-    loadLatestBaselineDetail();
-    return () => { cancelled = true; };
-  }, [latestBaseline?.id, loadBaselineDetail]);
 
   useEffect(() => {
     if (!activeProject?.id) {
@@ -274,11 +318,14 @@ export default function ActivitiesPage({ activeProject, tree, activities, reload
   const rows = useMemo(() => buildActivityRows(tree, activities, baselineActivities), [activities, baselineActivities, tree]);
   const columnSettingsKey = useMemo(() => getColumnSettingsStorageKey(activeProject?.id), [activeProject?.id]);
 
-  const handleRequestedCellHandled = useCallback(() => setRequestedCellId(null), []);
+  const handleRequestedCellHandled = useCallback(() => {
+    setRequestedCellId(null);
+  }, []);
 
   const runActivityMutation = useCallback(async (action) => {
     setPageError('');
     setPageSuccess('');
+
     try {
       return await action();
     } catch (error) {
@@ -304,12 +351,14 @@ export default function ActivitiesPage({ activeProject, tree, activities, reload
     setCaptureBusy(true);
 
     try {
-      await controlPeriodsApi.capture({
+      const payload = {
         project_id: activeProject.id,
         financial_period_id: selectedFinancialPeriodId,
         snapshot_date: snapshotDate || selectedFinancialPeriod?.cutoff_date || '',
         close_notes: snapshotNotes,
-      });
+      };
+
+      await controlPeriodsApi.capture(payload);
 
       const [updatedDefinitions] = await Promise.all([reloadFinancialPeriods(), reloadPeriods()]);
       const nextSelection = Array.isArray(updatedDefinitions)
@@ -354,7 +403,11 @@ export default function ActivitiesPage({ activeProject, tree, activities, reload
           cost: 0,
         }),
       );
-      if (created?.id) setRequestedCellId(`${created.id}:name`);
+
+      if (created?.id) {
+        setRequestedCellId(`${created.id}:name`);
+      }
+
       await reloadActivities();
     } catch {
       // Error manejado arriba.
@@ -394,12 +447,18 @@ export default function ActivitiesPage({ activeProject, tree, activities, reload
   const captureHelper = !selectedFinancialPeriod
     ? ''
     : selectedFinancialPeriod.has_snapshot
-      ? 'Este periodo ya tiene snapshot. Puedes volver a guardarlo si necesitas refrescarlo, pero normalmente conviene escoger el siguiente periodo disponible.'
+      ? 'Este periodo ya tiene snapshot. Normalmente conviene escoger el siguiente periodo disponible.'
       : 'Se guardará el avance acumulado y el EV monetario del proyecto activo para este periodo.';
+
+  const baselineBannerError = baselineDetailError || baselinesError;
 
   return (
     <div className="space-y-4">
-      <BaselineBanner latestBaseline={latestBaseline} baselineLoading={baselinesLoading || baselineDetailLoading} baselineError={baselinesError} />
+      <BaselineBanner
+        latestBaseline={latestBaseline}
+        baselineLoading={baselinesLoading || baselineDetailLoading}
+        baselineError={baselineBannerError}
+      />
 
       {pageError ? <InlineAlert tone="warning">{pageError}</InlineAlert> : null}
       {pageSuccess ? <InlineAlert tone="success">{pageSuccess}</InlineAlert> : null}

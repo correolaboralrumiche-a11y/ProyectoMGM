@@ -25,6 +25,7 @@ La base vigente del proyecto opera sobre:
 - **Períodos financieros definidos por proyecto**
 - **Registro y seguimiento documentario**
 - **Seeds, healthchecks, verificación de plataforma y pruebas base**
+- **Pruebas de integración del dominio**
 
 ---
 
@@ -93,8 +94,6 @@ Esto evita mezclar navegación operativa y permite mantener separados los flujos
 - Snapshot asociado a un período financiero definido y con fecha de snapshot.
 - Base temporal para análisis acumulado y parcial en futuros layouts o plantillas.
 
----
-
 ### Módulo 2 — Control Documentario
 
 #### Registro maestro de entregables
@@ -116,7 +115,7 @@ Esto evita mezclar navegación operativa y permite mantener separados los flujos
 - Códigos de respuesta documental.
 - Actualización del estado documental actual con base en la última revisión.
 
-> Alcance actual del módulo 2: **seguimiento y registro de data documentaria**.  
+> Alcance actual del módulo 2: **seguimiento y registro de data documentaria**.
 > No está orientado todavía a gestión de archivos adjuntos ni a workflow documental completo.
 
 ---
@@ -147,6 +146,7 @@ Esto evita mezclar navegación operativa y permite mantener separados los flujos
 - Healthchecks.
 - Verificación de plataforma.
 - Pruebas base automatizadas.
+- Pruebas de integración del dominio para baseline, actividades, períodos financieros y deliverables.
 - Scripts base de respaldo y restauración.
 - Manejo más claro de errores técnicos en frontend/backend.
 
@@ -244,8 +244,8 @@ Desde esa base, el proyecto evolucionó hacia una estructura más cercana a un E
 
 ### Sprint 11 — Separación por módulos y control documentario
 - Pantalla inicial de selección de módulo.
-- **Módulo 1: Control de Proyectos**
-- **Módulo 2: Control Documentario**
+- **Módulo 1: Control de Proyectos**.
+- **Módulo 2: Control Documentario**.
 - Registro maestro de entregables y revisiones documentarias.
 
 ### Sprint 12 — Períodos financieros, baseline y EV
@@ -256,6 +256,33 @@ Desde esa base, el proyecto evolucionó hacia una estructura más cercana a un E
 - Cálculo de EV contra presupuesto base.
 - Guardado de snapshot financiero desde la pestaña Actividades.
 - Persistencia de configuración visible de columnas en Actividades.
+
+### Sprint 13 — Consolidación del flujo baseline → EV → Período Financiero
+- Ajustes para enriquecer snapshots con baseline y EV calculado.
+- Mejor consolidación del flujo de captura desde Actividades.
+- Mejora del visor/histórico de Períodos Financieros.
+
+### Sprint 14 — Paridad de esquema, bootstrap y verificación
+- Revisión de coherencia entre esquema, seed y runtime.
+- Verificación reforzada de tablas, roles y permisos.
+- Consolidación del arranque limpio del entorno.
+
+### Sprint 15 — Refactor de capas y reducción de acoplamiento
+- Reorganización de páginas grandes del frontend.
+- Mejor separación de responsabilidades en Activities, Projects y Periodos Financieros.
+- Refactor del servicio de Períodos Financieros para hacerlo más mantenible.
+
+### Sprint 16 — Pruebas de integración del dominio
+- Cobertura de pruebas para baseline.
+- Cobertura de rutas críticas de actividades.
+- Cobertura de períodos financieros.
+- Cobertura de control documentario.
+- Mejor protección de reglas de negocio críticas.
+
+### Sprint 17 — Consolidación pública y release de fase
+- Documentación pública alineada al estado real del ERP.
+- Instrucciones operativas consolidadas.
+- Notas de release y limitaciones conocidas antes del bloque de Plantillas.
 
 ---
 
@@ -280,6 +307,7 @@ ProyectoMGM/
 │  ├─ .env.example
 │  ├─ knexfile.js
 │  └─ package.json
+├─ INSTRUCCIONES.txt
 └─ README.md
 ```
 
@@ -333,7 +361,7 @@ Verifica el estado de la plataforma:
 npm run platform:verify
 ```
 
-Ejecuta pruebas base:
+Ejecuta pruebas:
 
 ```bash
 npm test
@@ -424,11 +452,12 @@ npm test
 2. Construir WBS.
 3. Crear actividades.
 4. Generar línea base.
-5. Registrar avance acumulado en Actividades.
-6. Revisar EV calculado contra presupuesto base.
-7. Definir períodos financieros del proyecto.
+5. Definir períodos financieros del proyecto.
+6. Registrar avance acumulado en Actividades.
+7. Revisar EV calculado contra presupuesto base.
 8. Seleccionar período financiero desde Actividades.
 9. Guardar snapshot financiero del período.
+10. Revisar histórico y detalle del snapshot.
 
 ### Para Control Documentario
 1. Entrar al módulo Control Documentario.
@@ -438,19 +467,27 @@ npm test
 
 ---
 
-## Estado actual del sistema
+## Limitaciones conocidas
 
-La solución ya debe considerarse un **ERP web ligero especializado**, con dos líneas claras de trabajo:
+- El módulo documentario actual no gestiona archivos adjuntos ni workflow documental completo.
+- El EV implementado es básico y está orientado a captura acumulada por actividad.
+- Todavía no existen plantillas/layouts time-phased configurables por usuario.
+- La distribución temporal de HH y presupuesto de línea base aún no está implementada.
+- La analítica avanzada de CPI, SPI, ETC, EAC y forecasting aún no forma parte del alcance actual.
 
-- **Control de Proyectos**
-- **Control Documentario**
+---
 
-Aun así, el proyecto sigue en evolución y todavía tiene espacio de maduración en:
-- mayor profundidad de EV y curva temporal
-- plantillas o layouts time-phased
-- HH y presupuesto de línea base distribuidos en el tiempo
-- dashboards analíticos
-- endurecimiento adicional de pruebas y despliegue
+## Release de consolidación actual
+
+Esta fase del proyecto ya puede considerarse una **release de consolidación** del ERP liviano, con dos módulos estables y una base temporal suficiente para entrar al siguiente bloque funcional.
+
+Estado consolidado de la release:
+- navegación por módulos
+- baseline funcional
+- EV básico por actividad
+- períodos financieros definidos y snapshots
+- control documentario de registro, revisión y respuesta
+- verificación de plataforma y pruebas del dominio
 
 ---
 
@@ -458,11 +495,11 @@ Aun así, el proyecto sigue en evolución y todavía tiene espacio de maduració
 
 Siguientes pasos recomendados:
 
-1. Consolidar totalmente el flujo de baseline, EV y períodos financieros.
-2. Implementar la funcionalidad de **Plantillas** para layouts temporales.
-3. Incorporar distribución temporal calculada de HH y presupuesto de línea base.
-4. Profundizar control analítico (EV acumulado/parcial, comparativas, curvas).
-5. Endurecer pruebas, performance y despliegue.
+1. Implementar la funcionalidad de **Plantillas** para layouts temporales.
+2. Incorporar distribución temporal calculada de HH y presupuesto de línea base.
+3. Profundizar control analítico (EV acumulado/parcial, comparativas, curvas).
+4. Incorporar dashboards analíticos.
+5. Endurecer performance, despliegue y operación productiva.
 
 ---
 
@@ -471,4 +508,4 @@ Siguientes pasos recomendados:
 - Esta versión ya no debe considerarse una demo inicial.
 - El sistema ya incluye base para ERP liviano con separación por módulos.
 - El módulo documentario actual está orientado a **seguimiento de data** y no todavía a gestión documental completa.
-- Antes de construir plantillas analíticas avanzadas, conviene consolidar completamente la capa temporal de períodos financieros.
+- Antes de construir plantillas analíticas avanzadas, conviene seguir usando como fuente temporal principal los **Períodos Financieros**.

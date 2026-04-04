@@ -44,11 +44,15 @@ const DEFAULT_COLUMN_SETTINGS = { visibleKeys: DEFAULT_VISIBLE_KEYS, order: CONF
 
 function buildOptionMap(options = []) {
   const map = new Map();
+
   (options || []).forEach((item) => {
     const value = typeof item === 'string' ? item : item?.value ?? item?.code;
     const label = typeof item === 'string' ? item : item?.label ?? item?.name ?? item?.code;
-    if (value) map.set(String(value), label || value);
+    if (value) {
+      map.set(String(value), label || value);
+    }
   });
+
   return map;
 }
 
@@ -59,8 +63,14 @@ function compareValues(a, b, direction = 'asc') {
 
   const leftNumber = Number(left);
   const rightNumber = Number(right);
-  const isNumeric = Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && String(left).trim() !== '' && String(right).trim() !== '';
-  if (isNumeric) return (leftNumber - rightNumber) * factor;
+  const isNumeric = Number.isFinite(leftNumber)
+    && Number.isFinite(rightNumber)
+    && String(left).trim() !== ''
+    && String(right).trim() !== '';
+
+  if (isNumeric) {
+    return (leftNumber - rightNumber) * factor;
+  }
 
   return String(left).localeCompare(String(right), 'es', { numeric: true, sensitivity: 'base' }) * factor;
 }
@@ -73,7 +83,10 @@ function sanitizeColumnSettings(parsed) {
   const parsedOrder = Array.isArray(parsed?.order) ? parsed.order : [];
   const parsedVisibleKeys = Array.isArray(parsed?.visibleKeys) ? parsed.visibleKeys : [];
   const cleanedOrder = parsedOrder.filter((key) => CONFIGURABLE_COLUMN_KEYS.includes(key));
-  const order = cleanedOrder.length ? [...cleanedOrder, ...CONFIGURABLE_COLUMN_KEYS.filter((key) => !cleanedOrder.includes(key))] : DEFAULT_COLUMN_SETTINGS.order;
+  const order = cleanedOrder.length
+    ? [...cleanedOrder, ...CONFIGURABLE_COLUMN_KEYS.filter((key) => !cleanedOrder.includes(key))]
+    : DEFAULT_COLUMN_SETTINGS.order;
+
   const cleanedVisibleConfigurable = parsedVisibleKeys.filter((key) => CONFIGURABLE_COLUMN_KEYS.includes(key));
   const visibleKeys = [...FIXED_COLUMN_KEYS, ...cleanedVisibleConfigurable];
   return { order, visibleKeys: visibleKeys.length ? visibleKeys : DEFAULT_COLUMN_SETTINGS.visibleKeys };
@@ -81,6 +94,7 @@ function sanitizeColumnSettings(parsed) {
 
 function readColumnSettings(storageKey) {
   if (!storageKey || typeof window === 'undefined') return DEFAULT_COLUMN_SETTINGS;
+
   try {
     const raw = window.localStorage.getItem(storageKey);
     if (!raw) return DEFAULT_COLUMN_SETTINGS;
@@ -96,7 +110,11 @@ function persistColumnSettings(storageKey, settings) {
 }
 
 function getVisibleColumns(columnSettings) {
-  const middleColumns = columnSettings.order.map((key) => COLUMN_MAP.get(key)).filter(Boolean).filter((column) => columnSettings.visibleKeys.includes(column.key));
+  const middleColumns = columnSettings.order
+    .map((key) => COLUMN_MAP.get(key))
+    .filter(Boolean)
+    .filter((column) => columnSettings.visibleKeys.includes(column.key));
+
   return [COLUMN_MAP.get('code'), COLUMN_MAP.get('name'), ...middleColumns];
 }
 
@@ -151,19 +169,134 @@ function getBaselineValue(row, key) {
 }
 
 function PlusIcon({ className = 'h-4 w-4' }) {
-  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" /></svg>;
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
+    </svg>
+  );
 }
 
 function TrashIcon({ className = 'h-4 w-4' }) {
-  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18" /><path strokeLinecap="round" strokeLinejoin="round" d="M8 6V4h8v2" /><path strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14H6L5 6" /><path strokeLinecap="round" strokeLinejoin="round" d="M10 11v6M14 11v6" /></svg>;
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8 6V4h8v2" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14H6L5 6" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10 11v6M14 11v6" />
+    </svg>
+  );
 }
 
 function ActionRailButton({ icon, label, onClick, disabled = false, tone = 'default' }) {
-  const toneClass = tone === 'danger' ? 'border-rose-200 bg-white text-rose-700 hover:bg-rose-50' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50';
+  const toneClass = tone === 'danger'
+    ? 'border-rose-200 bg-white text-rose-700 hover:bg-rose-50'
+    : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50';
+
   return (
-    <button type="button" onClick={onClick} disabled={disabled} title={label} aria-label={label} className={['flex h-10 w-10 items-center justify-center rounded-lg border shadow-sm transition', toneClass, disabled ? 'cursor-not-allowed opacity-50 hover:bg-white' : ''].join(' ')}>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={label}
+      aria-label={label}
+      className={[
+        'flex h-10 w-10 items-center justify-center rounded-lg border shadow-sm transition',
+        toneClass,
+        disabled ? 'cursor-not-allowed opacity-50 hover:bg-white' : '',
+      ].join(' ')}
+    >
       {icon}
     </button>
+  );
+}
+
+function Toolbar({
+  search,
+  onSearchChange,
+  statusFilter,
+  onStatusFilterChange,
+  statusOptions,
+  visibleActivityCount,
+  onOpenColumnPanel,
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="Buscar por WBS, código, actividad o clasificación"
+          className="w-80 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs"
+        />
+        <select
+          value={statusFilter}
+          onChange={(event) => onStatusFilterChange(event.target.value)}
+          className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs"
+        >
+          <option value="ALL">Todos los estados</option>
+          {(statusOptions || []).map((status) => {
+            const value = status?.code ?? status?.value ?? status;
+            const label = status?.name ?? status?.label ?? status?.code ?? status;
+            return <option key={value} value={value}>{label}</option>;
+          })}
+        </select>
+        <button
+          type="button"
+          onClick={onOpenColumnPanel}
+          className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700"
+        >
+          Columnas...
+        </button>
+      </div>
+
+      <div className="text-xs text-slate-500">{visibleActivityCount} actividades visibles</div>
+    </div>
+  );
+}
+
+function HeaderRow({ visibleColumns, sortConfig, onToggleSort, gridTemplateColumns }) {
+  return (
+    <div
+      className="sticky top-0 z-10 grid border-b border-slate-200 bg-slate-100 text-[11px] font-semibold uppercase tracking-wide text-slate-600"
+      style={{ gridTemplateColumns }}
+    >
+      {visibleColumns.map((column) => {
+        const isSorted = sortConfig.key === column.key;
+        return (
+          <button
+            key={column.key}
+            type="button"
+            onClick={() => onToggleSort(column.key)}
+            className={`flex items-center gap-1 px-2 py-2 text-left ${column.sortable ? 'hover:bg-slate-200' : 'cursor-default'}`}
+          >
+            <span>{column.label}</span>
+            {column.sortable ? (
+              <span className="text-[10px] text-slate-400">
+                {isSorted ? (sortConfig.direction === 'asc' ? '▲' : '▼') : '↕'}
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ActionsRail({ selectedRow, selectedActivity, onAdd, onDelete }) {
+  return (
+    <aside className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-3">
+      <div className="mb-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Acciones</div>
+      <div className="flex flex-col items-center gap-2">
+        <ActionRailButton icon={<PlusIcon />} label="Agregar actividad" onClick={onAdd} disabled={!selectedRow} />
+        <ActionRailButton
+          icon={<TrashIcon />}
+          label="Eliminar actividad"
+          tone="danger"
+          onClick={onDelete}
+          disabled={!selectedActivity}
+        />
+      </div>
+    </aside>
   );
 }
 
@@ -208,14 +341,19 @@ export default function DataTable({
   const groupedRows = useMemo(() => {
     const groups = [];
     let currentGroup = null;
+
     rows.forEach((row) => {
       if (row.type === 'wbs') {
         currentGroup = { wbs: row, activities: [] };
         groups.push(currentGroup);
         return;
       }
-      if (row.type === 'activity' && currentGroup) currentGroup.activities.push(row);
+
+      if (row.type === 'activity' && currentGroup) {
+        currentGroup.activities.push(row);
+      }
     });
+
     return groups;
   }, [rows]);
 
@@ -223,8 +361,8 @@ export default function DataTable({
     const query = search.trim().toLowerCase();
     const output = [];
 
-    groupedRows.forEach(({ wbs, activities }) => {
-      const filteredActivities = activities
+    groupedRows.forEach(({ wbs, activities: groupActivities }) => {
+      const filteredActivities = groupActivities
         .filter((activity) => {
           const searchBlob = [
             activity.activity_id,
@@ -252,7 +390,11 @@ export default function DataTable({
 
       const matchesWbs = !query || `${wbs.code} ${wbs.name}`.toLowerCase().includes(query);
       if (matchesWbs || filteredActivities.length > 0) {
-        output.push({ ...wbs, visible_direct_activity_count: filteredActivities.length, total_direct_activity_count: activities.length });
+        output.push({
+          ...wbs,
+          visible_direct_activity_count: filteredActivities.length,
+          total_direct_activity_count: groupActivities.length,
+        });
         output.push(...filteredActivities);
       }
     });
@@ -264,7 +406,14 @@ export default function DataTable({
   const selectedRow = useMemo(() => processedRows.find((row) => row.id === selectedRowId) || null, [processedRows, selectedRowId]);
   const selectedActivity = selectedRow?.type === 'activity' ? selectedRow : null;
 
-  const editableColumnKeys = useMemo(() => visibleColumns.filter((column) => !column.readOnly).map((column) => column.key).filter((key) => !BASELINE_COLUMN_KEYS.includes(key)), [visibleColumns]);
+  const editableColumnKeys = useMemo(
+    () => visibleColumns
+      .filter((column) => !column.readOnly)
+      .map((column) => column.key)
+      .filter((key) => !BASELINE_COLUMN_KEYS.includes(key)),
+    [visibleColumns],
+  );
+
   const editableCells = useMemo(() => {
     const next = [];
     activityRows.forEach((row) => {
@@ -281,22 +430,30 @@ export default function DataTable({
   }
 
   function registerCellRef(cellId) {
-    if (!cellRefs.current.has(cellId)) cellRefs.current.set(cellId, { current: null });
+    if (!cellRefs.current.has(cellId)) {
+      cellRefs.current.set(cellId, { current: null });
+    }
     return cellRefs.current.get(cellId);
   }
 
   function focusCellById(cellId, shouldStartEditing = false) {
     setActiveCell(cellId);
-    if (shouldStartEditing) setEditingCell(cellId);
+    if (shouldStartEditing) {
+      setEditingCell(cellId);
+    }
+
     requestAnimationFrame(() => {
       const targetRef = cellRefs.current.get(cellId);
-      if (targetRef?.current) targetRef.current.focus();
+      if (targetRef?.current) {
+        targetRef.current.focus();
+      }
     });
   }
 
   useEffect(() => {
     if (!requestedCellId) return;
     if (!editableCells.includes(requestedCellId)) return;
+
     setSelectedRowId(requestedCellId.split(':')[0]);
     focusCellById(requestedCellId, true);
     onRequestedCellHandled?.();
@@ -305,7 +462,9 @@ export default function DataTable({
   useEffect(() => {
     if (!selectedRowId && processedRows.length > 0) {
       const firstActivity = processedRows.find((row) => row.type === 'activity');
-      if (firstActivity) setSelectedRowId(firstActivity.id);
+      if (firstActivity) {
+        setSelectedRowId(firstActivity.id);
+      }
     }
   }, [processedRows, selectedRowId]);
 
@@ -346,7 +505,12 @@ export default function DataTable({
   function toggleSort(columnKey) {
     const column = COLUMN_MAP.get(columnKey);
     if (!column?.sortable) return;
-    setSortConfig((previous) => previous.key === columnKey ? { key: columnKey, direction: previous.direction === 'asc' ? 'desc' : 'asc' } : { key: columnKey, direction: 'asc' });
+
+    setSortConfig((previous) => (
+      previous.key === columnKey
+        ? { key: columnKey, direction: previous.direction === 'asc' ? 'desc' : 'asc' }
+        : { key: columnKey, direction: 'asc' }
+    ));
   }
 
   function selectRowOnly(row) {
@@ -358,6 +522,7 @@ export default function DataTable({
   function handleCellOpen(row, columnKey, startEditing = false) {
     if (row.type !== 'activity') return;
     if (!editableColumnKeys.includes(columnKey)) return;
+
     setSelectedRowId(row.id);
     const nextCellId = buildActivityCellId(row.id, columnKey);
     focusCellById(nextCellId, startEditing);
@@ -395,19 +560,31 @@ export default function DataTable({
 
   function renderWbsCell(row, column, isSelectedRow = false) {
     const baseClass = `border-b border-slate-200 px-2 py-1 text-xs ${isSelectedRow ? 'bg-sky-100' : 'bg-slate-50'}`;
-    if (column.key === 'code') return <div className={`${baseClass} font-semibold text-slate-700`}>{row.code}</div>;
+
+    if (column.key === 'code') {
+      return <div className={`${baseClass} font-semibold text-slate-700`}>{row.code}</div>;
+    }
+
     if (column.key === 'name') {
       return (
         <div className={`${baseClass} font-semibold text-slate-800`}>
           <div className="flex items-center gap-2">
             <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-700">WBS</span>
             <span>{row.name}</span>
-            {row.rollup_activity_count > 0 ? <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] text-slate-600">{row.rollup_activity_count} act.</span> : null}
+            {row.rollup_activity_count > 0 ? (
+              <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] text-slate-600">
+                {row.rollup_activity_count} act.
+              </span>
+            ) : null}
           </div>
         </div>
       );
     }
-    if (BASELINE_COLUMN_KEYS.includes(column.key)) return <div className={baseClass}>{renderReadonlyValue(column.key, getBaselineValue(row, column.key))}</div>;
+
+    if (BASELINE_COLUMN_KEYS.includes(column.key)) {
+      return <div className={baseClass}>{renderReadonlyValue(column.key, getBaselineValue(row, column.key))}</div>;
+    }
+
     if (column.key === 'start_date') return <div className={baseClass}>{formatDate(row.rollup_start_date)}</div>;
     if (column.key === 'end_date') return <div className={baseClass}>{formatDate(row.rollup_end_date)}</div>;
     if (column.key === 'duration') return <div className={baseClass}>{row.rollup_duration || '—'}</div>;
@@ -415,7 +592,10 @@ export default function DataTable({
     if (column.key === 'hours') return <div className={baseClass}>{formatNumber(row.rollup_hours)}</div>;
     if (column.key === 'cost') return <div className={baseClass}>{formatCurrency(row.rollup_cost)}</div>;
     if (column.key === 'ev_amount') return <div className={baseClass}>{formatCurrency(row.rollup_ev_amount)}</div>;
-    if (column.key === 'status_code') return <div className={baseClass}>{row.visible_direct_activity_count}/{row.total_direct_activity_count} directas visibles</div>;
+    if (column.key === 'status_code') {
+      return <div className={baseClass}>{row.visible_direct_activity_count}/{row.total_direct_activity_count} directas visibles</div>;
+    }
+
     return <div className={`${baseClass} text-slate-400`}>—</div>;
   }
 
@@ -441,31 +621,103 @@ export default function DataTable({
     };
 
     if (column.key === 'code') {
-      return <EditableCell value={row.activity_id || ''} {...commonProps} onCommit={(value) => onUpdateActivity(row, { activity_id: value })} />;
+      return (
+        <EditableCell
+          value={row.activity_id || ''}
+          {...commonProps}
+          onCommit={(value) => onUpdateActivity(row, { activity_id: value })}
+        />
+      );
     }
+
     if (column.key === 'name') {
-      return <EditableCell value={row.name || ''} {...commonProps} onCommit={(value) => onUpdateActivity(row, { name: value })} />;
+      return (
+        <EditableCell
+          value={row.name || ''}
+          {...commonProps}
+          onCommit={(value) => onUpdateActivity(row, { name: value })}
+        />
+      );
     }
+
     if (column.key === 'start_date' || column.key === 'end_date') {
-      return <EditableCell value={normalizeDateValue(row[column.key]) || ''} type="date" {...commonProps} onCommit={(value) => onUpdateActivity(row, { [column.key]: value })} />;
+      return (
+        <EditableCell
+          value={normalizeDateValue(row[column.key]) || ''}
+          type="date"
+          {...commonProps}
+          onCommit={(value) => onUpdateActivity(row, { [column.key]: value })}
+        />
+      );
     }
-    if (column.key === 'duration') return <div className={baseCellClass}>{row.duration ?? '—'}</div>;
-    if (column.key === 'ev_amount') return <div className={baseCellClass}>{renderReadonlyValue(column.key, row.ev_amount)}</div>;
+
+    if (column.key === 'duration') {
+      return <div className={baseCellClass}>{row.duration ?? '—'}</div>;
+    }
+
+    if (column.key === 'ev_amount') {
+      return <div className={baseCellClass}>{renderReadonlyValue(column.key, row.ev_amount)}</div>;
+    }
+
     if (column.key === 'progress' || column.key === 'hours' || column.key === 'cost') {
-      return <EditableCell value={row[column.key] ?? 0} type="number" {...commonProps} onCommit={(value) => onUpdateActivity(row, { [column.key]: Number(value || 0) })} />;
+      return (
+        <EditableCell
+          value={row[column.key] ?? 0}
+          type="number"
+          {...commonProps}
+          onCommit={(value) => onUpdateActivity(row, { [column.key]: Number(value || 0) })}
+        />
+      );
     }
+
     if (column.key === 'status_code') {
-      return <EditableCell value={row.status_code || ''} type="select" options={statusOptions} {...commonProps} onCommit={(value) => onUpdateActivity(row, { status_code: value })} />;
+      return (
+        <EditableCell
+          value={row.status_code || ''}
+          type="select"
+          options={statusOptions}
+          {...commonProps}
+          onCommit={(value) => onUpdateActivity(row, { status_code: value })}
+        />
+      );
     }
+
     if (column.key === 'activity_type_code') {
-      return <EditableCell value={row.activity_type_code || ''} type="select" options={activityTypeOptions} {...commonProps} onCommit={(value) => onUpdateActivity(row, { activity_type_code: value })} />;
+      return (
+        <EditableCell
+          value={row.activity_type_code || ''}
+          type="select"
+          options={activityTypeOptions}
+          {...commonProps}
+          onCommit={(value) => onUpdateActivity(row, { activity_type_code: value })}
+        />
+      );
     }
+
     if (column.key === 'priority_code') {
-      return <EditableCell value={row.priority_code || ''} type="select" options={priorityOptions} {...commonProps} onCommit={(value) => onUpdateActivity(row, { priority_code: value })} />;
+      return (
+        <EditableCell
+          value={row.priority_code || ''}
+          type="select"
+          options={priorityOptions}
+          {...commonProps}
+          onCommit={(value) => onUpdateActivity(row, { priority_code: value })}
+        />
+      );
     }
+
     if (column.key === 'discipline_code') {
-      return <EditableCell value={row.discipline_code || ''} type="select" options={disciplineOptions} {...commonProps} onCommit={(value) => onUpdateActivity(row, { discipline_code: value })} />;
+      return (
+        <EditableCell
+          value={row.discipline_code || ''}
+          type="select"
+          options={disciplineOptions}
+          {...commonProps}
+          onCommit={(value) => onUpdateActivity(row, { discipline_code: value })}
+        />
+      );
     }
+
     return <div className={baseCellClass}>{renderReadonlyValue(column.key, resolveDisplayLabel(column.key, row))}</div>;
   }
 
@@ -475,36 +727,25 @@ export default function DataTable({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por WBS, código, actividad o clasificación" className="w-80 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs" />
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs">
-            <option value="ALL">Todos los estados</option>
-            {(statusOptions || []).map((status) => {
-              const value = status?.code ?? status?.value ?? status;
-              const label = status?.name ?? status?.label ?? status?.code ?? status;
-              return <option key={value} value={value}>{label}</option>;
-            })}
-          </select>
-          <button type="button" onClick={() => setShowColumnPanel(true)} className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700">Columnas...</button>
-        </div>
-        <div className="text-xs text-slate-500">{activityRows.length} actividades visibles</div>
-      </div>
+      <Toolbar
+        search={search}
+        onSearchChange={setSearch}
+        statusFilter={statusFilter}
+        onStatusFilterChange={setStatusFilter}
+        statusOptions={statusOptions}
+        visibleActivityCount={activityRows.length}
+        onOpenColumnPanel={() => setShowColumnPanel(true)}
+      />
 
       <div className="flex gap-3">
         <div className="min-w-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white">
           <div className="max-h-[68vh] overflow-auto">
-            <div className="sticky top-0 z-10 grid border-b border-slate-200 bg-slate-100 text-[11px] font-semibold uppercase tracking-wide text-slate-600" style={{ gridTemplateColumns }}>
-              {visibleColumns.map((column) => {
-                const isSorted = sortConfig.key === column.key;
-                return (
-                  <button key={column.key} type="button" onClick={() => toggleSort(column.key)} className={`flex items-center gap-1 px-2 py-2 text-left ${column.sortable ? 'hover:bg-slate-200' : 'cursor-default'}`}>
-                    <span>{column.label}</span>
-                    {column.sortable ? <span className="text-[10px] text-slate-400">{isSorted ? (sortConfig.direction === 'asc' ? '▲' : '▼') : '↕'}</span> : null}
-                  </button>
-                );
-              })}
-            </div>
+            <HeaderRow
+              visibleColumns={visibleColumns}
+              sortConfig={sortConfig}
+              onToggleSort={toggleSort}
+              gridTemplateColumns={gridTemplateColumns}
+            />
 
             {processedRows.length === 0 ? (
               <div className="px-3 py-6 text-sm text-slate-500">No hay datos para mostrar.</div>
@@ -512,10 +753,20 @@ export default function DataTable({
               processedRows.map((row) => {
                 const isSelectedRow = selectedRowId === row.id;
                 return (
-                  <div key={row.id} className={`grid ${isSelectedRow ? 'ring-1 ring-inset ring-sky-300' : ''}`} style={{ gridTemplateColumns }} onClick={() => selectRowOnly(row)}>
+                  <div
+                    key={row.id}
+                    className={`grid ${isSelectedRow ? 'ring-1 ring-inset ring-sky-300' : ''}`}
+                    style={{ gridTemplateColumns }}
+                    onClick={() => selectRowOnly(row)}
+                  >
                     {visibleColumns.map((column) => (
-                      <div key={`${row.id}:${column.key}`} onDoubleClick={() => handleCellOpen(row, column.key, row.type === 'activity')}>
-                        {row.type === 'wbs' ? renderWbsCell(row, column, isSelectedRow) : renderActivityCell(row, column)}
+                      <div
+                        key={`${row.id}:${column.key}`}
+                        onDoubleClick={() => handleCellOpen(row, column.key, row.type === 'activity')}
+                      >
+                        {row.type === 'wbs'
+                          ? renderWbsCell(row, column, isSelectedRow)
+                          : renderActivityCell(row, column)}
                       </div>
                     ))}
                   </div>
@@ -525,13 +776,12 @@ export default function DataTable({
           </div>
         </div>
 
-        <aside className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <div className="mb-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Acciones</div>
-          <div className="flex flex-col items-center gap-2">
-            <ActionRailButton icon={<PlusIcon />} label="Agregar actividad" onClick={handleAddFromSelection} disabled={!selectedRow} />
-            <ActionRailButton icon={<TrashIcon />} label="Eliminar actividad" tone="danger" onClick={handleDeleteSelected} disabled={!selectedActivity} />
-          </div>
-        </aside>
+        <ActionsRail
+          selectedRow={selectedRow}
+          selectedActivity={selectedActivity}
+          onAdd={handleAddFromSelection}
+          onDelete={handleDeleteSelected}
+        />
       </div>
 
       <ColumnSelectorModal
@@ -542,11 +792,15 @@ export default function DataTable({
         defaultSelectedKeys={OPERATIVE_COLUMN_KEYS}
         onClose={() => setShowColumnPanel(false)}
         onApply={(selectedKeys) => {
-          const cleanedSelected = Array.isArray(selectedKeys) ? selectedKeys.filter((key) => CONFIGURABLE_COLUMN_KEYS.includes(key)) : [];
+          const cleanedSelected = Array.isArray(selectedKeys)
+            ? selectedKeys.filter((key) => CONFIGURABLE_COLUMN_KEYS.includes(key))
+            : [];
+
           updateColumnSettings({
             visibleKeys: [...FIXED_COLUMN_KEYS, ...cleanedSelected],
             order: [...cleanedSelected, ...CONFIGURABLE_COLUMN_KEYS.filter((key) => !cleanedSelected.includes(key))],
           });
+
           setShowColumnPanel(false);
         }}
       />
