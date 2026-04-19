@@ -365,14 +365,23 @@ function SnapshotDetail({ period, snapshots, loading }) {
   );
 }
 
+function resolveFlag(primaryValue, fallbackValue = false) {
+  return typeof primaryValue === 'boolean' ? primaryValue : Boolean(fallbackValue);
+}
+
 export default function ControlPeriodsPage({
   activeProject,
   canCreate = false,
   canClose = false,
   canReopen = false,
   canDelete = false,
+  permissions,
 }) {
   const [definitionForm, setDefinitionForm] = useState(EMPTY_DEFINITION_FORM);
+  const effectiveCanCreate = resolveFlag(canCreate, permissions?.controlPeriods?.create);
+  const effectiveCanClose = resolveFlag(canClose, permissions?.controlPeriods?.close);
+  const effectiveCanReopen = resolveFlag(canReopen, permissions?.controlPeriods?.reopen);
+  const effectiveCanDelete = resolveFlag(canDelete, permissions?.controlPeriods?.delete);
   const [editingDefinitionId, setEditingDefinitionId] = useState('');
   const [selectedDefinitionId, setSelectedDefinitionId] = useState('');
   const [selectedPeriodId, setSelectedPeriodId] = useState('');
@@ -737,7 +746,7 @@ export default function ControlPeriodsPage({
           <button
             type="button"
             onClick={handleCreateOrUpdateDefinition}
-            disabled={!canCreate || busyId === 'create-definition' || busyId === 'update-definition'}
+            disabled={!effectiveCanCreate || busyId === 'create-definition' || busyId === 'update-definition'}
             className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:opacity-60"
           >
             {busyId === 'create-definition' || busyId === 'update-definition'
@@ -765,8 +774,8 @@ export default function ControlPeriodsPage({
             onSelect={handleSelectDefinition}
             onEdit={handleEditDefinition}
             onDelete={handleDeleteDefinition}
-            canManage={canCreate}
-            canDelete={canDelete}
+            canManage={effectiveCanCreate}
+            canDelete={effectiveCanDelete}
             busyId={busyId}
           />
         </div>
@@ -793,9 +802,9 @@ export default function ControlPeriodsPage({
           onClose={handleClosePeriod}
           onReopen={handleReopenPeriod}
           onDelete={handleDeletePeriod}
-          canClose={canClose}
-          canReopen={canReopen}
-          canDelete={canDelete}
+          canClose={effectiveCanClose}
+          canReopen={effectiveCanReopen}
+          canDelete={effectiveCanDelete}
           busyId={busyId}
         />
       </SectionCard>

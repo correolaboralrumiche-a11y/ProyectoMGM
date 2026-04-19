@@ -1,403 +1,237 @@
 import { useEffect, useMemo, useState } from 'react';
 
-function Chevron({ expanded }) {
-  return (
-    <span className="inline-flex h-4 w-4 items-center justify-center text-slate-500">
-      {expanded ? '−' : '+'}
-    </span>
-  );
-}
-
-function buildPackages(columns, fixedKeys) {
-  const fixedSet = new Set(fixedKeys || []);
-
-  const configurable = (columns || []).filter(
-    (column) => !fixedSet.has(column.key) && column.configurable !== false
-  );
-
-  const packagesMap = new Map();
-
-  configurable.forEach((column) => {
-    const packageName = column.group || 'Operativas';
-
-    if (!packagesMap.has(packageName)) {
-      packagesMap.set(packageName, []);
-    }
-
-    packagesMap.get(packageName).push(column);
-  });
-
-  return Array.from(packagesMap.entries()).map(([name, items]) => ({
-    name,
-    items,
-  }));
+function moveItem(list, fromIndex, toIndex) {
+  if (fromIndex < 0 || toIndex < 0 || fromIndex >= list.length || toIndex >= list.length) {
+    return list;
+  }
+  const next = [...list];
+  const [item] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, item);
+  return next;
 }
 
 export default function ColumnSelectorModal({
   isOpen,
-  columns = [],
+  columns,
   fixedKeys = [],
-  selectedKeys = [],
-  defaultSelectedKeys = [],
+  selectedKeys,
+  defaultSelectedKeys,
   onClose,
   onApply,
 }) {
-  const fixedColumns = useMemo(() => {
-    const fixedSet = new Set(fixedKeys || []);
-    return columns.filter((column) => fixedSet.has(column.key));
-  }, [columns, fixedKeys]);
+  const fixedColumns = useMemo(
+    () => columns.filter((column) => fixedKeys.includes(column.key)),
+    [columns, fixedKeys],
+  );
+  const configurableColumns = useMemo(
+    () => columns.filter((column) => column.configurable),
+    [columns],
+  );
 
-  const packages = useMemo(() => buildPackages(columns, fixedKeys), [columns, fixedKeys]);
-
-  const [expandedPackages, setExpandedPackages] = useState({});
-  const [activeAvailablePackage, setActiveAvailablePackage] = useState('');
-  const [selectedAvailableKey, setSelectedAvailableKey] = useState('');
-  const [draftSelectedKeys, setDraftSelectedKeys] = useState(selectedKeys || []);
-  const [selectedChosenKey, setSelectedChosenKey] = useState('');
+  const [draftSelected, setDraftSelected] = useState(selectedKeys);
+  const [availableActiveKey, setAvailableActiveKey] = useState(null);
+  const [selectedActiveKey, setSelectedActiveKey] = useState(null);
 
   useEffect(() => {
     if (!isOpen) return;
+    setDraftSelected(selectedKeys);
+    setAvailableActiveKey(null);
+    setSelectedActiveKey(selectedKeys[0] || null);
+  }, [isOpen, selectedKeys]);
 
-    const nextExpanded = {};
-    packages.forEach((pkg) => {
-      nextExpanded[pkg.name] = true;
-    });
-
-    setExpandedPackages(nextExpanded);
-    setActiveAvailablePackage(packages[0]?.name || '');
-    setSelectedAvailableKey('');
-    setDraftSelectedKeys(selectedKeys || []);
-    setSelectedChosenKey(selectedKeys?.[0] || '');
-  }, [isOpen, packages, selectedKeys]);
-
-  const selectedSet = useMemo(() => new Set(draftSelectedKeys), [draftSelectedKeys]);
-
-  const availablePackages = useMemo(() => {
-    return packages.map((pkg) => ({
-      ...pkg,
-      items: pkg.items.filter((column) => !selectedSet.has(column.key)),
-    }));
-  }, [packages, selectedSet]);
-
-  const activePackage = useMemo(() => {
-    return availablePackages.find((pkg) => pkg.name === activeAvailablePackage) || availablePackages[0] || null;
-  }, [availablePackages, activeAvailablePackage]);
-
-  const selectedColumns = useMemo(() => {
-    const map = new Map(columns.map((column) => [column.key, column]));
-    return draftSelectedKeys
-      .map((key) => map.get(key))
-      .filter(Boolean);
-  }, [columns, draftSelectedKeys]);
-
-  function togglePackage(packageName) {
-    setExpandedPackages((prev) => ({
-      ...prev,
-      [packageName]: !prev[packageName],
-    }));
-  }
-
-  function handlePackageClick(packageName) {
-    setActiveAvailablePackage(packageName);
-    setExpandedPackages((prev) => ({
-      ...prev,
-      [packageName]: prev[packageName] ?? true,
-    }));
-  }
+  const availableColumns = useMemo(
+    () => configurableColumns.filter((column) => !draftSelected.includes(column.key)),
+    [configurableColumns, draftSelected],
+  );
 
   function addOne() {
-    if (!selectedAvailableKey) return;
-    if (draftSelectedKeys.includes(selectedAvailableKey)) return;
-
-    const next = [...draftSelectedKeys, selectedAvailableKey];
-    setDraftSelectedKeys(next);
-    setSelectedChosenKey(selectedAvailableKey);
-    setSelectedAvailableKey('');
+    if (!availableActiveKey) return;
+    if (draftSelected.includes(availableActiveKey)) return;
+    setDraftSelected((previous) => [...previous, availableActiveKey]);
+    setSelectedActiveKey(availableActiveKey);
+    setAvailableActiveKey(null);
   }
 
-  function addAllFromPackage() {
-    if (!activePackage) return;
-
-    const keysToAdd = activePackage.items.map((item) => item.key);
-    if (!keysToAdd.length) return;
-
-    const next = [...draftSelectedKeys];
-    keysToAdd.forEach((key) => {
-      if (!next.includes(key)) next.push(key);
-    });
-
-    setDraftSelectedKeys(next);
-    setSelectedChosenKey(keysToAdd[keysToAdd.length - 1] || '');
-    setSelectedAvailableKey('');
+  function addAll() {
+    const allKeys = configurableColumns.map((column) => column.key);
+    setDraftSelected(allKeys);
+    setSelectedActiveKey(allKeys[0] || null);
+    setAvailableActiveKey(null);
   }
 
   function removeOne() {
-    if (!selectedChosenKey) return;
-
-    const next = draftSelectedKeys.filter((key) => key !== selectedChosenKey);
-    setDraftSelectedKeys(next);
-    setSelectedChosenKey(next[0] || '');
+    if (!selectedActiveKey) return;
+    setDraftSelected((previous) => previous.filter((key) => key !== selectedActiveKey));
+    setAvailableActiveKey(selectedActiveKey);
+    setSelectedActiveKey(null);
   }
 
   function removeAll() {
-    setDraftSelectedKeys([]);
-    setSelectedChosenKey('');
+    setDraftSelected([]);
+    setSelectedActiveKey(null);
+    setAvailableActiveKey(configurableColumns[0]?.key || null);
   }
 
   function moveSelected(direction) {
-    if (!selectedChosenKey) return;
+    if (!selectedActiveKey) return;
+    setDraftSelected((previous) => {
+      const index = previous.indexOf(selectedActiveKey);
+      if (index === -1) return previous;
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      return moveItem(previous, index, targetIndex);
+    });
+  }
 
-    const currentIndex = draftSelectedKeys.indexOf(selectedChosenKey);
-    if (currentIndex === -1) return;
-
-    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
-    if (targetIndex < 0 || targetIndex >= draftSelectedKeys.length) return;
-
-    const next = [...draftSelectedKeys];
-    const [moved] = next.splice(currentIndex, 1);
-    next.splice(targetIndex, 0, moved);
-
-    setDraftSelectedKeys(next);
-    setSelectedChosenKey(moved);
+  function apply(closeAfter = false) {
+    onApply(draftSelected);
+    if (closeAfter) onClose();
   }
 
   function restoreDefault() {
-    setDraftSelectedKeys(defaultSelectedKeys || []);
-    setSelectedChosenKey(defaultSelectedKeys?.[0] || '');
-    setSelectedAvailableKey('');
-  }
-
-  function handleApply() {
-    onApply?.(draftSelectedKeys, draftSelectedKeys);
+    setDraftSelected(defaultSelectedKeys);
+    setSelectedActiveKey(defaultSelectedKeys[0] || null);
+    setAvailableActiveKey(null);
   }
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
-      <div className="flex h-[80vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-start justify-between border-b border-slate-200 px-6 py-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-start justify-between border-b border-slate-200 px-6 py-4">
           <div>
-            <h2 className="text-2xl font-semibold text-slate-800">Columnas</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Configura qué columnas visibles usar en la hoja de actividades.
-            </p>
+            <h2 className="text-lg font-semibold text-slate-900">Columns</h2>
+            <p className="mt-1 text-sm text-slate-500">Configura qué columnas visibles usar en la hoja de actividades.</p>
           </div>
-
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-2 py-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-            aria-label="Cerrar"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
           >
             ×
           </button>
         </div>
 
-        <div className="flex min-h-0 flex-1 gap-6 px-6 py-5">
-          <section className="grid min-h-0 flex-1 grid-cols-[1.15fr,84px,1fr] gap-5">
-            <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200">
-              <div className="border-b border-slate-200 px-4 py-3">
-                <h3 className="text-sm font-semibold text-slate-700">Opciones disponibles</h3>
-              </div>
-
-              <div className="min-h-0 overflow-auto p-3">
-                <div className="space-y-1">
-                  {availablePackages.map((pkg) => {
-                    const expanded = expandedPackages[pkg.name] ?? true;
-                    const isActivePackage = activePackage?.name === pkg.name;
-
-                    return (
-                      <div key={pkg.name} className="rounded-lg border border-transparent">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handlePackageClick(pkg.name);
-                            togglePackage(pkg.name);
-                          }}
-                          className={[
-                            'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition',
-                            isActivePackage ? 'bg-sky-100 text-sky-900' : 'hover:bg-slate-100 text-slate-700',
-                          ].join(' ')}
-                        >
-                          <Chevron expanded={expanded} />
-                          <span className="font-medium">{pkg.name}</span>
-                        </button>
-
-                        {expanded ? (
-                          <div className="ml-6 mt-1 space-y-1">
-                            {pkg.items.length === 0 ? (
-                              <div className="px-3 py-1 text-xs text-slate-400">Sin opciones disponibles</div>
-                            ) : (
-                              pkg.items.map((column) => (
-                                <button
-                                  key={column.key}
-                                  type="button"
-                                  onClick={() => {
-                                    setActiveAvailablePackage(pkg.name);
-                                    setSelectedAvailableKey(column.key);
-                                  }}
-                                  onDoubleClick={addOne}
-                                  className={[
-                                    'block w-full rounded-md px-3 py-1.5 text-left text-sm transition',
-                                    selectedAvailableKey === column.key
-                                      ? 'bg-slate-200 text-slate-900'
-                                      : 'text-slate-700 hover:bg-slate-100',
-                                  ].join(' ')}
-                                >
-                                  {column.label}
-                                </button>
-                              ))
-                            )}
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-col items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={addOne}
-                disabled={!selectedAvailableKey}
-                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                title="Agregar"
-              >
-                &gt;
-              </button>
-
-              <button
-                type="button"
-                onClick={addAllFromPackage}
-                disabled={!activePackage || activePackage.items.length === 0}
-                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                title="Agregar todas"
-              >
-                &gt;&gt;
-              </button>
-
-              <button
-                type="button"
-                onClick={removeOne}
-                disabled={!selectedChosenKey}
-                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                title="Quitar"
-              >
-                &lt;
-              </button>
-
-              <button
-                type="button"
-                onClick={removeAll}
-                disabled={draftSelectedKeys.length === 0}
-                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                title="Quitar todas"
-              >
-                &lt;&lt;
-              </button>
-            </div>
-
-            <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200">
-              <div className="border-b border-slate-200 px-4 py-3">
-                <h3 className="text-sm font-semibold text-slate-700">Opciones seleccionadas</h3>
-              </div>
-
-              <div className="min-h-0 overflow-auto p-3">
-                <div className="mb-3">
-                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Fijas</div>
-                  <div className="space-y-1">
-                    {fixedColumns.map((column) => (
-                      <div
-                        key={column.key}
-                        className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-700"
-                      >
-                        <span>{column.label}</span>
-                        <span className="text-[10px] font-semibold uppercase text-slate-400">Fixed</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  {selectedColumns.map((column) => (
+        <div className="grid gap-4 px-6 py-5 lg:grid-cols-[minmax(0,1fr)_120px_minmax(0,1fr)_140px]">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Available Options</div>
+            <div className="max-h-[320px] overflow-auto rounded-xl border border-slate-200 bg-white p-2">
+              {availableColumns.length === 0 ? (
+                <div className="px-2 py-3 text-sm text-slate-500">No hay más columnas disponibles.</div>
+              ) : (
+                availableColumns.map((column) => {
+                  const isActive = availableActiveKey === column.key;
+                  return (
                     <button
                       key={column.key}
                       type="button"
-                      onClick={() => setSelectedChosenKey(column.key)}
-                      onDoubleClick={removeOne}
-                      className={[
-                        'block w-full rounded-md px-3 py-2 text-left text-sm transition',
-                        selectedChosenKey === column.key
-                          ? 'bg-sky-100 text-sky-900'
-                          : 'text-slate-700 hover:bg-slate-100',
-                      ].join(' ')}
+                      onClick={() => {
+                        setAvailableActiveKey(column.key);
+                        setSelectedActiveKey(null);
+                      }}
+                      onDoubleClick={addOne}
+                      className={`mb-1 block w-full rounded-xl px-3 py-2 text-left text-sm transition ${
+                        isActive ? 'bg-emerald-100 text-slate-800' : 'text-slate-700 hover:bg-slate-100'
+                      }`}
                     >
                       {column.label}
                     </button>
-                  ))}
+                  );
+                })
+              )}
+            </div>
+          </div>
 
-                  {selectedColumns.length === 0 ? (
-                    <div className="px-3 py-2 text-sm text-slate-400">No hay columnas seleccionadas</div>
-                  ) : null}
-                </div>
-              </div>
+          <div className="flex flex-col justify-center gap-2">
+            <button type="button" onClick={addOne} className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50">&gt;</button>
+            <button type="button" onClick={addAll} className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50">&gt;&gt;</button>
+            <button type="button" onClick={removeOne} className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50">&lt;</button>
+            <button type="button" onClick={removeAll} className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50">&lt;&lt;</button>
+          </div>
 
-              <div className="border-t border-slate-200 p-3">
-                <div className="flex justify-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => moveSelected('up')}
-                    disabled={!selectedChosenKey}
-                    className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                    title="Subir"
-                  >
-                    ↑
-                  </button>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Selected Options</div>
 
-                  <button
-                    type="button"
-                    onClick={() => moveSelected('down')}
-                    disabled={!selectedChosenKey}
-                    className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                    title="Bajar"
-                  >
-                    ↓
-                  </button>
-                </div>
+            <div className="mb-3 rounded-xl border border-slate-200 bg-white p-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Fixed</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {fixedColumns.map((column) => (
+                  <span key={column.key} className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
+                    {column.label}
+                  </span>
+                ))}
               </div>
             </div>
-          </section>
+
+            <div className="max-h-[240px] overflow-auto rounded-xl border border-slate-200 bg-white p-2">
+              {draftSelected.length === 0 ? (
+                <div className="px-2 py-3 text-sm text-slate-500">No hay columnas seleccionadas.</div>
+              ) : (
+                draftSelected.map((key) => {
+                  const column = configurableColumns.find((item) => item.key === key);
+                  if (!column) return null;
+                  const isActive = selectedActiveKey === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => {
+                        setSelectedActiveKey(key);
+                        setAvailableActiveKey(null);
+                      }}
+                      className={`mb-1 block w-full rounded-xl px-3 py-2 text-left text-sm transition ${
+                        isActive ? 'bg-sky-100 text-slate-800' : 'text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      {column.label}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-col justify-between gap-3">
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => moveSelected('up')}
+                disabled={!selectedActiveKey || draftSelected.indexOf(selectedActiveKey) === 0}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                ▲ Subir
+              </button>
+              <button
+                type="button"
+                onClick={() => moveSelected('down')}
+                disabled={!selectedActiveKey || draftSelected.indexOf(selectedActiveKey) === draftSelected.length - 1}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                ▼ Bajar
+              </button>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
+              Activity ID y Nombre de la actividad permanecen fijas en la hoja, como columnas ancla del layout operativo.
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center justify-between border-t border-slate-200 px-6 py-4">
-          <button
-            type="button"
-            onClick={restoreDefault}
-            className="rounded-xl border border-slate-300 bg-white px-4 py-2 font-medium text-slate-700 hover:bg-slate-50"
-          >
-            Restaurar por defecto
-          </button>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2 font-medium text-slate-700 hover:bg-slate-50"
-            >
-              Cancelar
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-6 py-4">
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => apply(true)} className="rounded-xl border border-emerald-600 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-emerald-50">
+              OK
             </button>
-
-            <button
-              type="button"
-              onClick={handleApply}
-              className="rounded-xl bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700"
-            >
-              Aplicar
+            <button type="button" onClick={onClose} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm text-slate-800 transition hover:bg-slate-50">
+              Cancel
+            </button>
+            <button type="button" onClick={() => apply(false)} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm text-slate-800 transition hover:bg-slate-50">
+              Apply
             </button>
           </div>
+          <button type="button" onClick={restoreDefault} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm text-slate-800 transition hover:bg-slate-50">
+            Default
+          </button>
         </div>
       </div>
     </div>

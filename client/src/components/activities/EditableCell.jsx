@@ -52,12 +52,13 @@ export default function EditableCell({
   }, [onActivate, onEditingHandled, startEditing]);
 
   useEffect(() => {
-    if (isEditing) {
-      requestAnimationFrame(() => {
-        innerInputRef.current?.focus();
-        if (type !== 'select') innerInputRef.current?.select?.();
-      });
-    }
+    if (!isEditing) return;
+    requestAnimationFrame(() => {
+      innerInputRef.current?.focus();
+      if (type !== 'select') {
+        innerInputRef.current?.select?.();
+      }
+    });
   }, [isEditing, type]);
 
   function commit(nextValue = localValue) {
@@ -79,29 +80,29 @@ export default function EditableCell({
 
   function renderDisplayValue() {
     if (type === 'date') {
-      return formatDateDisplay(localValue) || <span className="text-slate-300">dd/mm/aaaa</span>;
+      return formatDateDisplay(localValue) || 'dd/mm/aaaa';
     }
-
     if (type === 'number') {
-      return localValue === '' || localValue === null || typeof localValue === 'undefined'
-        ? <span className="text-slate-300">0</span>
-        : String(localValue);
+      return localValue === '' || localValue === null || typeof localValue === 'undefined' ? '0' : String(localValue);
     }
-
     if (type === 'select') {
       const selectedOption = normalizedOptions.find((item) => String(item.value) === String(localValue));
-      return selectedOption?.label || localValue || <span className="text-slate-300">—</span>;
+      return selectedOption?.label || localValue || '—';
     }
-
-    return localValue || <span className="text-slate-300">&nbsp;</span>;
+    return localValue || ' ';
   }
 
   if (isEditing) {
     if (type === 'select') {
       return (
         <select
-          ref={innerInputRef}
-          value={localValue}
+          ref={(node) => {
+            innerInputRef.current = node;
+            if (inputRef) {
+              inputRef.current = node;
+            }
+          }}
+          value={localValue ?? ''}
           onChange={(event) => {
             const next = event.target.value;
             setLocalValue(next);
@@ -123,10 +124,12 @@ export default function EditableCell({
             if (event.key === 'ArrowUp') handleNavigationKey(event, 'up');
             if (event.key === 'ArrowDown') handleNavigationKey(event, 'down');
           }}
-          className="h-8 w-full border-none bg-transparent px-2 py-1 text-sm text-slate-800 outline-none"
+          className="h-10 w-full border-none bg-transparent px-3 text-sm text-slate-800 outline-none"
         >
           {normalizedOptions.map((item) => (
-            <option key={item.value} value={item.value}>{item.label}</option>
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
           ))}
         </select>
       );
@@ -134,8 +137,13 @@ export default function EditableCell({
 
     return (
       <input
-        ref={innerInputRef}
-        type={type}
+        ref={(node) => {
+          innerInputRef.current = node;
+          if (inputRef) {
+            inputRef.current = node;
+          }
+        }}
+        type={type === 'date' ? 'date' : type === 'number' ? 'number' : 'text'}
         value={localValue ?? ''}
         onChange={(event) => setLocalValue(event.target.value)}
         onBlur={() => commit()}
@@ -153,21 +161,34 @@ export default function EditableCell({
           }
           if (event.key === 'ArrowUp') handleNavigationKey(event, 'up');
           if (event.key === 'ArrowDown') handleNavigationKey(event, 'down');
-          if (event.key === 'ArrowLeft' && event.currentTarget.selectionStart === 0 && event.currentTarget.selectionEnd === 0) {
+          if (
+            event.key === 'ArrowLeft' &&
+            event.currentTarget.selectionStart === 0 &&
+            event.currentTarget.selectionEnd === 0
+          ) {
             handleNavigationKey(event, 'left');
           }
-          if (event.key === 'ArrowRight' && event.currentTarget.selectionStart === event.currentTarget.value.length && event.currentTarget.selectionEnd === event.currentTarget.value.length) {
+          if (
+            event.key === 'ArrowRight' &&
+            event.currentTarget.selectionStart === event.currentTarget.value.length &&
+            event.currentTarget.selectionEnd === event.currentTarget.value.length
+          ) {
             handleNavigationKey(event, 'right');
           }
         }}
-        className="h-8 w-full border-none bg-transparent px-2 py-1 text-sm text-slate-800 outline-none"
+        className="h-10 w-full border-none bg-transparent px-3 text-sm text-slate-800 outline-none"
       />
     );
   }
 
   return (
     <div
-      ref={inputRef}
+      ref={(node) => {
+        if (inputRef) {
+          inputRef.current = node;
+        }
+      }}
+      role="button"
       tabIndex={0}
       onFocus={() => onActivate?.()}
       onClick={() => onActivate?.()}
@@ -212,7 +233,11 @@ export default function EditableCell({
           setIsEditing(true);
         }
       }}
-      className={`min-h-[32px] w-full cursor-default px-2 py-1 text-sm text-slate-800 outline-none ${isActive ? 'bg-sky-50 ring-1 ring-inset ring-sky-400' : 'bg-transparent hover:bg-slate-50'}`}
+      className={`flex min-h-[38px] w-full items-center px-3 text-sm outline-none transition ${
+        isActive
+          ? 'bg-sky-50 ring-1 ring-inset ring-sky-400'
+          : 'bg-transparent hover:bg-slate-50/80'
+      } text-slate-800`}
     >
       {renderDisplayValue()}
     </div>

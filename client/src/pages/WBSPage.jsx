@@ -8,23 +8,39 @@ import { getErrorMessage } from '../utils/error.js';
 const LOCKED_MESSAGE = 'No tienes permiso operativo para modificar el WBS en este proyecto.';
 const REORDER_LOCKED_MESSAGE = 'No tienes permiso operativo para reordenar el WBS en este proyecto.';
 
+function resolveFlag(primaryValue, fallbackValue = false) {
+  return typeof primaryValue === 'boolean' ? primaryValue : Boolean(fallbackValue);
+}
+
 export default function WBSPage({
   activeProject,
   tree,
   reloadWBS,
+  onChanged,
   loading = false,
   error = '',
   canCreate = false,
   canUpdate = false,
   canDelete = false,
   canReorder = false,
+  permissions,
   operationallyLocked = false,
+  operationalLock = false,
 }) {
   const [busy, setBusy] = useState(false);
   const [pageError, setPageError] = useState('');
   const [pageSuccess, setPageSuccess] = useState('');
 
-  const readOnly = operationallyLocked;
+  const effectiveReload = useMemo(
+    () => reloadWBS || onChanged || (async () => []),
+    [onChanged, reloadWBS],
+  );
+
+  const effectiveCanCreate = resolveFlag(canCreate, permissions?.wbs?.create);
+  const effectiveCanUpdate = resolveFlag(canUpdate, permissions?.wbs?.update);
+  const effectiveCanDelete = resolveFlag(canDelete, permissions?.wbs?.delete);
+  const effectiveCanReorder = resolveFlag(canReorder, permissions?.wbs?.reorder);
+  const readOnly = resolveFlag(operationallyLocked, operationalLock);
 
   const clearFeedback = useCallback(() => {
     setPageError('');
@@ -40,7 +56,7 @@ export default function WBSPage({
 
       try {
         await action();
-        await reloadWBS();
+        await effectiveReload();
         if (successMessage) {
           setPageSuccess(successMessage);
         }
@@ -50,7 +66,7 @@ export default function WBSPage({
         setBusy(false);
       }
     },
-    [busy, clearFeedback, reloadWBS],
+    [busy, clearFeedback, effectiveReload],
   );
 
   const guardMutation = useCallback(
@@ -73,7 +89,7 @@ export default function WBSPage({
         if (!normalized) return;
 
         await guardMutation({
-          allowed: canCreate && !readOnly,
+          allowed: effectiveCanCreate && !readOnly,
           deniedMessage: LOCKED_MESSAGE,
           action: () =>
             wbsApi.create({
@@ -90,7 +106,7 @@ export default function WBSPage({
         if (!normalized) return;
 
         await guardMutation({
-          allowed: canCreate && !readOnly,
+          allowed: effectiveCanCreate && !readOnly,
           deniedMessage: LOCKED_MESSAGE,
           action: () =>
             wbsApi.create({
@@ -106,7 +122,7 @@ export default function WBSPage({
         if (!normalized || normalized === node.name) return;
 
         await guardMutation({
-          allowed: canUpdate && !readOnly,
+          allowed: effectiveCanUpdate && !readOnly,
           deniedMessage: 'No tienes permiso operativo para editar nodos WBS en este proyecto.',
           action: () => wbsApi.update(node.id, { name: normalized }),
           successMessage: 'Nodo WBS actualizado correctamente.',
@@ -114,7 +130,7 @@ export default function WBSPage({
       },
       indent: async (node) => {
         await guardMutation({
-          allowed: canReorder && !readOnly,
+          allowed: effectiveCanReorder && !readOnly,
           deniedMessage: REORDER_LOCKED_MESSAGE,
           action: () => wbsApi.indent(node.id),
           successMessage: 'Nodo WBS reordenado correctamente.',
@@ -122,7 +138,7 @@ export default function WBSPage({
       },
       outdent: async (node) => {
         await guardMutation({
-          allowed: canReorder && !readOnly,
+          allowed: effectiveCanReorder && !readOnly,
           deniedMessage: REORDER_LOCKED_MESSAGE,
           action: () => wbsApi.outdent(node.id),
           successMessage: 'Nodo WBS reordenado correctamente.',
@@ -130,7 +146,7 @@ export default function WBSPage({
       },
       moveUp: async (node) => {
         await guardMutation({
-          allowed: canReorder && !readOnly,
+          allowed: effectiveCanReorder && !readOnly,
           deniedMessage: REORDER_LOCKED_MESSAGE,
           action: () => wbsApi.moveUp(node.id),
           successMessage: 'Nodo WBS movido correctamente.',
@@ -138,7 +154,7 @@ export default function WBSPage({
       },
       moveDown: async (node) => {
         await guardMutation({
-          allowed: canReorder && !readOnly,
+          allowed: effectiveCanReorder && !readOnly,
           deniedMessage: REORDER_LOCKED_MESSAGE,
           action: () => wbsApi.moveDown(node.id),
           successMessage: 'Nodo WBS movido correctamente.',
@@ -149,14 +165,14 @@ export default function WBSPage({
         if (!confirmed) return;
 
         await guardMutation({
-          allowed: canDelete && !readOnly,
+          allowed: effectiveCanDelete && !readOnly,
           deniedMessage: 'No tienes permiso operativo para eliminar nodos WBS en este proyecto.',
           action: () => wbsApi.remove(node.id),
           successMessage: 'Nodo WBS eliminado correctamente.',
         });
       },
     }),
-    [activeProject?.id, canCreate, canDelete, canReorder, canUpdate, guardMutation, readOnly],
+    [activeProject?.id, effectiveCanCreate, effectiveCanDelete, effectiveCanReorder, effectiveCanUpdate, guardMutation, readOnly],
   );
 
   if (!activeProject) {
@@ -168,7 +184,7 @@ export default function WBSPage({
       title={`WBS · ${activeProject.name}`}
       subtitle="Estructura jerárquica del proyecto"
       actions={
-        canCreate ? (
+        effectiveCanCreate ? (
           <button
             type="button"
             onClick={handlers.addRoot}
@@ -204,10 +220,10 @@ export default function WBSPage({
         onMoveUp={handlers.moveUp}
         onMoveDown={handlers.moveDown}
         onDelete={handlers.remove}
-        canCreate={canCreate && !readOnly}
-        canUpdate={canUpdate && !readOnly}
-        canDelete={canDelete && !readOnly}
-        canReorder={canReorder && !readOnly}
+        canCreate={effectiveCanCreate && !readOnly}
+        canUpdate={effectiveCanUpdate && !readOnly}
+        canDelete={effectiveCanDelete && !readOnly}
+        canReorder={effectiveCanReorder && !readOnly}
       />
     </SectionCard>
   );

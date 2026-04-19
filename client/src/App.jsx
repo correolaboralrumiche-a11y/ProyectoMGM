@@ -43,19 +43,72 @@ function LoadingScreen() {
   );
 }
 
+function buildPermissions({ can, canAny, isAdmin }) {
+  return {
+    isAdmin,
+    projects: {
+      read: can('projects.read'),
+      create: can('projects.create'),
+      update: can('projects.update'),
+      delete: can('projects.delete'),
+    },
+    wbs: {
+      read: can('wbs.read'),
+      create: can('wbs.create'),
+      update: can('wbs.update'),
+      reorder: can('wbs.reorder'),
+      delete: can('wbs.delete'),
+    },
+    activities: {
+      read: can('activities.read'),
+      create: can('activities.create'),
+      update: can('activities.update'),
+      reorder: can('activities.reorder'),
+      delete: can('activities.delete'),
+    },
+    controlPeriods: {
+      read: can('control_periods.read'),
+      create: can('control_periods.create'),
+      close: can('control_periods.close'),
+      reopen: can('control_periods.reopen'),
+      delete: can('control_periods.delete'),
+    },
+    layoutTemplates: {
+      read: can('layout_templates.read'),
+      create: can('layout_templates.create'),
+      update: can('layout_templates.update'),
+      delete: can('layout_templates.delete'),
+    },
+    deliverables: {
+      read: can('deliverables.read'),
+      write: can('deliverables.write'),
+      create: canAny('deliverables.create', 'deliverables.write'),
+      update: canAny('deliverables.update', 'deliverables.write'),
+      delete: can('deliverables.delete'),
+      manageRevisions: can('deliverables.manage_revisions'),
+    },
+    baselines: {
+      read: can('baselines.read'),
+      create: can('baselines.create'),
+      delete: can('baselines.delete'),
+    },
+    catalogs: {
+      read: canAny('catalogs.read', 'catalogs.manage'),
+      manage: can('catalogs.manage'),
+    },
+    audit: {
+      read: can('audit.read'),
+    },
+  };
+}
+
 function getAllVisibleTabs(permissions) {
   const tabs = [];
   if (permissions.projects.read) tabs.push('projects');
   if (permissions.wbs.read) tabs.push('wbs');
   if (permissions.activities.read) tabs.push('activities');
   if (permissions.controlPeriods.read) tabs.push('control_periods');
-  const hasProjectControlAccess =
-    permissions.projects.read ||
-    permissions.wbs.read ||
-    permissions.activities.read ||
-    permissions.controlPeriods.read ||
-    permissions.layoutTemplates.read;
-  if (hasProjectControlAccess) tabs.push('templates');
+  if (permissions.layoutTemplates.read) tabs.push('templates');
   if (permissions.deliverables.read) tabs.push('deliverables');
   if (permissions.catalogs.read) tabs.push('catalogs');
   if (permissions.audit.read) tabs.push('audit');
@@ -203,61 +256,7 @@ function AuthenticatedApp({ user, onLogout }) {
   } = useProjects();
 
   const permissions = useMemo(
-    () => ({
-      isAdmin,
-      projects: {
-        read: can('projects.read'),
-        create: can('projects.create'),
-        update: can('projects.update'),
-        delete: can('projects.delete'),
-      },
-      wbs: {
-        read: can('wbs.read'),
-        create: can('wbs.create'),
-        update: can('wbs.update'),
-        reorder: can('wbs.reorder'),
-        delete: can('wbs.delete'),
-      },
-      activities: {
-        read: can('activities.read'),
-        create: can('activities.create'),
-        update: can('activities.update'),
-        reorder: can('activities.reorder'),
-        delete: can('activities.delete'),
-      },
-      controlPeriods: {
-        read: can('control_periods.read'),
-        create: can('control_periods.create'),
-        close: can('control_periods.close'),
-        reopen: can('control_periods.reopen'),
-        delete: can('control_periods.delete'),
-      },
-      layoutTemplates: {
-        read: can('layout_templates.read'),
-        create: can('layout_templates.create'),
-        update: can('layout_templates.update'),
-        delete: can('layout_templates.delete'),
-      },
-      deliverables: {
-        read: can('deliverables.read'),
-        create: can('deliverables.create'),
-        update: can('deliverables.update'),
-        delete: can('deliverables.delete'),
-        manageRevisions: can('deliverables.manage_revisions'),
-      },
-      baselines: {
-        read: can('baselines.read'),
-        create: can('baselines.create'),
-        delete: can('baselines.delete'),
-      },
-      catalogs: {
-        read: canAny('catalogs.read', 'catalogs.manage'),
-        manage: can('catalogs.manage'),
-      },
-      audit: {
-        read: can('audit.read'),
-      },
-    }),
+    () => buildPermissions({ can, canAny, isAdmin }),
     [can, canAny, isAdmin],
   );
 
@@ -289,7 +288,7 @@ function AuthenticatedApp({ user, onLogout }) {
 
   const handleProjectChanged = useCallback(
     async (projectId) => {
-      setActiveProjectId(projectId);
+      await setActiveProjectId(projectId);
     },
     [setActiveProjectId],
   );
@@ -301,14 +300,18 @@ function AuthenticatedApp({ user, onLogout }) {
     [reloadProjects],
   );
 
-  const handleWbsChanged = useCallback(async () => {
-    if (!activeProjectId) return;
-    await Promise.allSettled([reloadWBS(activeProjectId), reloadActivities(activeProjectId)]);
+  const handleWbsReload = useCallback(async () => {
+    if (!activeProjectId) return [];
+    const [wbsResult] = await Promise.allSettled([reloadWBS(), reloadActivities()]);
+    if (wbsResult.status === 'fulfilled') {
+      return wbsResult.value;
+    }
+    throw wbsResult.reason;
   }, [activeProjectId, reloadActivities, reloadWBS]);
 
-  const handleActivitiesChanged = useCallback(async () => {
+  const handleActivitiesReload = useCallback(async () => {
     if (!activeProjectId) return [];
-    return reloadActivities(activeProjectId);
+    return reloadActivities();
   }, [activeProjectId, reloadActivities]);
 
   const handleSelectModule = useCallback(
@@ -364,53 +367,56 @@ function AuthenticatedApp({ user, onLogout }) {
 
         <Tabs activeTab={activeTab} onChange={setActiveTab} visibleTabs={visibleTabs} />
 
-        {activeTabError ? <InlineAlert variant="error">{activeTabError}</InlineAlert> : null}
+        {activeTabError ? <InlineAlert tone="danger">{activeTabError}</InlineAlert> : null}
 
         {activeTab === 'projects' && permissions.projects.read ? (
           <ProjectsPage
             projects={projects}
             activeProjectId={activeProjectId}
-            activeProject={activeProject}
-            onProjectChanged={handleProjectChanged}
-            onProjectListChanged={handleProjectListChanged}
-            permissions={permissions}
-            operationalLock={operationalLock}
+            onProjectSelect={handleProjectChanged}
+            reloadProjects={handleProjectListChanged}
+            loading={projectsLoading}
+            error={projectsError}
+            canCreate={permissions.projects.create}
+            canUpdate={permissions.projects.update}
+            canDelete={permissions.projects.delete}
+            canCreateBaseline={permissions.baselines.create}
+            canDeleteBaseline={permissions.baselines.delete}
+            canOverrideOperationalLock={permissions.isAdmin}
           />
         ) : null}
 
         {activeTab === 'wbs' && permissions.wbs.read ? (
           <WBSPage
-            activeProjectId={activeProjectId}
             activeProject={activeProject}
             tree={tree}
+            reloadWBS={handleWbsReload}
             loading={wbsLoading}
             error={wbsError}
-            onChanged={handleWbsChanged}
-            permissions={permissions}
-            operationalLock={operationalLock}
+            canCreate={permissions.wbs.create}
+            canUpdate={permissions.wbs.update}
+            canDelete={permissions.wbs.delete}
+            canReorder={permissions.wbs.reorder}
+            operationallyLocked={operationalLock}
           />
         ) : null}
 
         {activeTab === 'activities' && permissions.activities.read ? (
           <ActivitiesPage
-            activeProjectId={activeProjectId}
             activeProject={activeProject}
             tree={tree}
             activities={activities}
-            loading={activitiesLoading}
-            error={activitiesError}
-            onChanged={handleActivitiesChanged}
-            permissions={permissions}
-            operationalLock={operationalLock}
+            reloadActivities={handleActivitiesReload}
           />
         ) : null}
 
         {activeTab === 'control_periods' && permissions.controlPeriods.read ? (
           <ControlPeriodsPage
-            activeProjectId={activeProjectId}
             activeProject={activeProject}
-            permissions={permissions}
-            operationalLock={operationalLock}
+            canCreate={permissions.controlPeriods.create}
+            canClose={permissions.controlPeriods.close}
+            canReopen={permissions.controlPeriods.reopen}
+            canDelete={permissions.controlPeriods.delete}
           />
         ) : null}
 
@@ -425,10 +431,13 @@ function AuthenticatedApp({ user, onLogout }) {
 
         {activeTab === 'deliverables' && permissions.deliverables.read ? (
           <DeliverablesPage
-            activeProjectId={activeProjectId}
             activeProject={activeProject}
-            permissions={permissions}
-            operationalLock={operationalLock}
+            tree={tree}
+            activities={activities}
+            canCreate={permissions.deliverables.create}
+            canUpdate={permissions.deliverables.update}
+            canDelete={permissions.deliverables.delete}
+            canManageRevisions={permissions.deliverables.manageRevisions}
           />
         ) : null}
 

@@ -1,8 +1,13 @@
 function formatDateTime(value) {
   if (!value) return '—';
+
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat('es-PE', { dateStyle: 'short', timeStyle: 'short' }).format(date);
+
+  return new Intl.DateTimeFormat('es-PE', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(date);
 }
 
 export default function BaselinesTable({
@@ -11,66 +16,68 @@ export default function BaselinesTable({
   selectedBaselineId,
   onSelect,
   onDelete,
-  canDelete = false,
 }) {
   if (loading) {
-    return <div className="text-sm text-slate-600">Cargando líneas base...</div>;
+    return <div className="erp-empty-state">Cargando líneas base...</div>;
   }
 
   if (!baselines.length) {
-    return <div className="text-sm text-slate-600">No hay líneas base registradas.</div>;
+    return <div className="erp-empty-state">No hay líneas base registradas.</div>;
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-slate-200 text-sm">
-        <thead className="bg-slate-50 text-left text-slate-600">
+    <div className="erp-data-panel overflow-x-auto">
+      <table>
+        <thead>
           <tr>
-            <th className="px-4 py-3 font-medium">Línea base</th>
-            <th className="px-4 py-3 font-medium">Creada</th>
-            <th className="px-4 py-3 font-medium">WBS</th>
-            <th className="px-4 py-3 font-medium">Actividades</th>
-            <th className="px-4 py-3 font-medium">Acciones</th>
+            <th>Línea base</th>
+            <th className="w-44">Creada</th>
+            <th className="w-28">WBS</th>
+            <th className="w-28">Actividades</th>
+            <th className="w-36">Acciones</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody>
           {baselines.map((baseline) => {
             const isSelected = baseline.id === selectedBaselineId;
+
             return (
-              <tr key={baseline.id} className={isSelected ? 'bg-emerald-50/40' : ''}>
-                <td className="px-4 py-3 text-slate-900">
+              <tr
+                key={baseline.id}
+                aria-selected={isSelected ? 'true' : 'false'}
+                className={isSelected ? 'data-selected-row' : ''}
+              >
+                <td>
                   <button
                     type="button"
                     onClick={() => onSelect(baseline.id)}
-                    className="font-medium text-slate-800 hover:text-sky-700"
+                    className="border-0 bg-transparent px-0 py-0 text-left shadow-none hover:bg-transparent"
                   >
-                    {baseline.name || 'Sin nombre'}
+                    <div className="font-semibold text-slate-900 hover:text-sky-700">
+                      {baseline.name || 'Sin nombre'}
+                    </div>
+                    {baseline.description ? (
+                      <div className="mt-1 text-xs text-slate-500">{baseline.description}</div>
+                    ) : null}
                   </button>
-                  {baseline.description ? (
-                    <div className="mt-1 text-xs text-slate-500">{baseline.description}</div>
-                  ) : null}
                 </td>
-                <td className="px-4 py-3 text-slate-700">{formatDateTime(baseline.created_at)}</td>
-                <td className="px-4 py-3 text-slate-700">{baseline.wbs_count ?? '—'}</td>
-                <td className="px-4 py-3 text-slate-700">{baseline.activities_count ?? baseline.activity_count ?? '—'}</td>
-                <td className="px-4 py-3">
+                <td className="whitespace-nowrap text-slate-500">
+                  {formatDateTime(baseline.created_at)}
+                </td>
+                <td>{baseline.wbs_count ?? '—'}</td>
+                <td>{baseline.activity_count ?? '—'}</td>
+                <td>
                   <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onSelect(baseline.id)}
-                      className="rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700"
-                    >
+                    <button type="button" onClick={() => onSelect(baseline.id)}>
                       Ver
                     </button>
-                    {canDelete ? (
-                      <button
-                        type="button"
-                        onClick={() => onDelete(baseline)}
-                        className="rounded border border-rose-200 px-2 py-1 text-xs font-medium text-rose-700"
-                      >
-                        Eliminar
-                      </button>
-                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => onDelete(baseline)}
+                      className="border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                    >
+                      Eliminar
+                    </button>
                   </div>
                 </td>
               </tr>

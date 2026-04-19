@@ -1,18 +1,28 @@
 function formatDateTime(value) {
   if (!value) return '—';
+
   try {
-    return new Date(value).toLocaleString();
+    return new Intl.DateTimeFormat('es-PE', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    }).format(new Date(value));
   } catch {
     return value;
   }
 }
 
-function getPriorityBadgeClass(code) {
-  const normalized = String(code || '').toLowerCase();
-  if (normalized === 'critical') return 'bg-rose-100 text-rose-700';
-  if (normalized === 'high') return 'bg-amber-100 text-amber-700';
-  if (normalized === 'medium') return 'bg-sky-100 text-sky-700';
-  return 'bg-slate-100 text-slate-700';
+function StatusChip({ value }) {
+  const normalized = String(value || '').trim().toLowerCase();
+  const toneClass =
+    normalized === 'active'
+      ? 'erp-chip erp-chip-success'
+      : normalized === 'closed' || normalized === 'inactive'
+        ? 'erp-chip erp-chip-neutral'
+        : normalized === 'on_hold' || normalized === 'hold'
+          ? 'erp-chip erp-chip-warning'
+          : 'erp-chip erp-chip-info';
+
+  return <span className={toneClass}>{value || '—'}</span>;
 }
 
 export default function ProjectsTable({
@@ -25,64 +35,79 @@ export default function ProjectsTable({
   canDelete = false,
 }) {
   if (!projects.length) {
-    return <div className="text-sm text-slate-600">No hay proyectos registrados.</div>;
+    return <div className="erp-empty-state">No hay proyectos registrados.</div>;
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-slate-200 text-sm">
-        <thead className="bg-slate-50 text-left text-slate-600">
+    <div className="erp-data-panel overflow-x-auto">
+      <table>
+        <thead>
           <tr>
-            <th className="px-4 py-3 font-medium">Activo</th>
-            <th className="px-4 py-3 font-medium">Nombre</th>
-            <th className="px-4 py-3 font-medium">Descripción</th>
-            <th className="px-4 py-3 font-medium">Estado</th>
-            <th className="px-4 py-3 font-medium">Prioridad</th>
-            <th className="px-4 py-3 font-medium">Moneda</th>
-            <th className="px-4 py-3 font-medium">Creado</th>
-            <th className="px-4 py-3 font-medium">Acciones</th>
+            <th className="w-28">Activo</th>
+            <th>Nombre</th>
+            <th>Descripción</th>
+            <th className="w-40">Estado</th>
+            <th className="w-40">Creado</th>
+            <th className="w-44">Acciones</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody>
           {projects.map((project) => {
             const isActive = project.id === activeProjectId;
+
             return (
-              <tr key={project.id} className={isActive ? 'bg-blue-50/40' : ''}>
-                <td className="px-4 py-3">
+              <tr
+                key={project.id}
+                aria-selected={isActive ? 'true' : 'false'}
+                className={isActive ? 'data-active-row' : ''}
+              >
+                <td>
                   <button
                     type="button"
                     onClick={() => onSelect(project.id)}
                     className={[
-                      'rounded-md px-2 py-1 text-xs font-medium',
-                      isActive ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200',
+                      'min-w-[92px]',
+                      isActive
+                        ? 'border-blue-200 bg-blue-600 text-white hover:bg-blue-700'
+                        : '',
                     ].join(' ')}
                   >
                     {isActive ? 'Activo' : 'Seleccionar'}
                   </button>
                 </td>
-                <td className="px-4 py-3 text-slate-900">{project.name}</td>
-                <td className="px-4 py-3 text-slate-700">{project.description || '—'}</td>
-                <td className="px-4 py-3 text-slate-700">{project.status_name || project.status_code || project.status || '—'}</td>
-                <td className="px-4 py-3 text-slate-700">
-                  <span className={['rounded-full px-2 py-1 text-xs font-medium', getPriorityBadgeClass(project.priority_code)].join(' ')}>
-                    {project.priority_name || project.priority_code || '—'}
-                  </span>
+                <td>
+                  <div className="font-semibold text-slate-900">{project.name}</div>
                 </td>
-                <td className="px-4 py-3 text-slate-700">{project.currency_code || project.currency_name || '—'}</td>
-                <td className="px-4 py-3 text-slate-700">{formatDateTime(project.created_at)}</td>
-                <td className="px-4 py-3">
+                <td className="max-w-[340px] text-slate-600">
+                  {project.description || '—'}
+                </td>
+                <td>
+                  <StatusChip
+                    value={project.status_name || project.status_code || project.status}
+                  />
+                </td>
+                <td className="whitespace-nowrap text-slate-500">
+                  {formatDateTime(project.created_at)}
+                </td>
+                <td>
                   <div className="flex flex-wrap gap-2">
                     {canEdit ? (
-                      <button type="button" onClick={() => onEdit(project)} className="rounded-md bg-slate-100 px-2 py-1 text-xs hover:bg-slate-200">
+                      <button type="button" onClick={() => onEdit(project)}>
                         Editar
                       </button>
                     ) : null}
                     {canDelete ? (
-                      <button type="button" onClick={() => onDelete(project)} className="rounded-md bg-red-100 px-2 py-1 text-xs text-red-700 hover:bg-red-200">
+                      <button
+                        type="button"
+                        onClick={() => onDelete(project)}
+                        className="border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                      >
                         Eliminar
                       </button>
                     ) : null}
-                    {!canEdit && !canDelete ? <span className="text-xs text-slate-400">Sin acciones</span> : null}
+                    {!canEdit && !canDelete ? (
+                      <span className="text-xs text-slate-400">Sin acciones</span>
+                    ) : null}
                   </div>
                 </td>
               </tr>

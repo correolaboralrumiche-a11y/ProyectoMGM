@@ -1,13 +1,11 @@
-INSTRUCCIONES DE ACTUALIZACIÓN — RELEASE DE CONSOLIDACIÓN
+INSTRUCCIONES DE ACTUALIZACIÓN — SPRINT 23 (PLANTILLAS ESTABLES)
 
-Esta versión consolida el ERP actual con:
-- Módulo 1: Control de Proyectos
-- Módulo 2: Control Documentario
-- baseline funcional
-- EV básico por actividad
-- períodos financieros definidos por proyecto
-- snapshots financieros desde Actividades
-- pruebas de integración del dominio
+Esta entrega cierra el bloque funcional de Plantillas con:
+- persistencia por proyecto de la plantilla seleccionada
+- persistencia de preferencias mínimas del visor
+- mensajes funcionales para estados vacíos y condiciones incompletas
+- visibilidad por permisos finos de la pestaña Plantillas
+- documentación y release notes actualizadas
 
 ----------------------------------------------------------------------
 1. SI REEMPLAZASTE ARCHIVOS DE CÓDIGO
@@ -32,118 +30,100 @@ npm run dev
 ```
 
 ----------------------------------------------------------------------
-2. SI LA ENTREGA INCLUYE MIGRACIONES NUEVAS
+2. MIGRACIONES
 ----------------------------------------------------------------------
-Ejecuta también:
+Esta entrega **no requiere migraciones nuevas**.
+
+No debes ejecutar `migrate:latest` salvo que estés aplicando otra entrega adicional que sí cambie el esquema.
+
+----------------------------------------------------------------------
+3. PRUEBAS RECOMENDADAS
+----------------------------------------------------------------------
+
+### Backend
+Ejecuta la suite para confirmar que el bloque Plantillas sigue estable:
 
 ```bash
 cd server
-npx knex migrate:latest --env development
-npm run db:seed
-npm run platform:verify
+npm test
 ```
 
-Haz esto cuando la entrega incluya:
-- tablas nuevas
-- columnas nuevas
-- permisos nuevos
-- catálogos nuevos
-- cambios de bootstrap
+Resultado esperado:
+- suite backend en verde
+- pruebas del módulo Plantillas ejecutándose junto al resto del dominio
 
-En PowerShell, si `npx` o `npm` se bloquean por políticas de ejecución, usa:
-
-```bash
-npx.cmd knex migrate:latest --env development
-npm.cmd run db:seed
-npm.cmd run platform:verify
-```
-
-----------------------------------------------------------------------
-3. FLUJO MÍNIMO DE PRUEBA RECOMENDADO
-----------------------------------------------------------------------
-
-### Módulo 1 — Control de Proyectos
+### Frontend / flujo manual
 1. iniciar sesión
 2. entrar a Control de Proyectos
-3. crear o abrir un proyecto
-4. crear WBS
-5. crear actividades
-6. generar línea base
-7. definir períodos financieros del proyecto
-8. ingresar avance en Actividades
-9. verificar que el EV se calcule contra el presupuesto base
-10. seleccionar un período financiero en Actividades
-11. guardar snapshot financiero desde Actividades
-12. revisar el snapshot en Periodos financieros
-
-### Módulo 2 — Control Documentario
-1. entrar a Control Documentario
-2. crear un entregable
-3. registrar una revisión
-4. registrar respuesta documental
-5. validar que se actualice el estado actual del entregable
+3. seleccionar un proyecto con WBS, actividades y línea base
+4. ir a Plantillas
+5. crear una plantilla nueva
+6. cambiar de pestaña y volver a Plantillas
+7. verificar que la plantilla siga seleccionada
+8. expandir/colapsar nodos del visor
+9. activar el filtro “solo alertas”
+10. refrescar visor
+11. cambiar de proyecto y volver al proyecto anterior
+12. verificar que la selección persista por proyecto
 
 ----------------------------------------------------------------------
-4. QUÉ REVISAR SI ALGO FALLA
+4. QUÉ DEBES VALIDAR EN PLANTILLAS
 ----------------------------------------------------------------------
 
-### Si falla la línea base
+### Permisos
+- la pestaña Plantillas solo debe verse si el usuario tiene `layout_templates.read`
+- usuarios sin permisos de creación/edición deben poder consultar, pero no modificar
+
+### UX / estados
+- si no hay proyecto activo: debe mostrarse mensaje claro
+- si no hay plantillas: debe mostrarse mensaje claro
+- si no hay períodos/buckets: debe mostrarse mensaje claro
+- si no hay línea base suficiente: debe mostrarse warning funcional
+- si no hay datos temporales valorizados: debe mostrarse mensaje claro
+
+### Persistencia
+- la plantilla seleccionada debe recordarse por proyecto
+- el visor debe conservar preferencias mínimas de uso
+
+----------------------------------------------------------------------
+5. QUÉ REVISAR SI ALGO FALLA
+----------------------------------------------------------------------
+
+### Si Plantillas no aparece
+- revisar permisos `layout_templates.read`
+- revisar que el usuario tenga acceso al Módulo 1 — Control de Proyectos
+
+### Si el builder no guarda
+- revisar permisos `layout_templates.create` / `layout_templates.update`
 - revisar consola del backend
-- verificar que las migraciones estén al día
-- verificar que existan actividades para snapshot
-- verificar que el proyecto activo sea correcto
+- revisar que el proyecto activo sea correcto
 
-### Si falla EV
-- verificar que exista línea base del proyecto
-- verificar que la actividad tenga presupuesto base de costo
-- verificar que el porcentaje de avance sea válido
+### Si el visor no genera buckets
+- revisar que existan períodos financieros o rango suficiente de actividades según la métrica
+- revisar snapshots y línea base del proyecto
 
-### Si falla Período Financiero
-- verificar que el proyecto tenga períodos definidos
-- verificar que el período seleccionado aún no tenga snapshot
-- verificar que el backend esté reiniciado después de migraciones
-- verificar que `platform:verify` no reporte faltantes
-
-### Si falla Control Documentario
-- verificar unicidad del código documental
-- revisar catálogos de tipo, estado y códigos de respuesta
-- revisar permisos del usuario para revisiones
+### Si el visor no muestra valores
+- revisar snapshots por período para `ev` / `progress`
+- revisar baseline completa para `baseline_hours` / `baseline_cost`
+- refrescar visor y confirmar proyecto activo
 
 ----------------------------------------------------------------------
-5. NOTA OPERATIVA
+6. NOTA OPERATIVA
 ----------------------------------------------------------------------
-La pestaña Actividades es ahora el punto principal para:
-- registrar avance
-- revisar EV básico
-- seleccionar período financiero
-- guardar snapshot financiero
+Plantillas ya debe considerarse un módulo funcional del ERP.
 
-La pestaña de Periodos financieros debe usarse principalmente para:
-- definir períodos
-- revisar histórico
-- consultar snapshots ya generados
-
-----------------------------------------------------------------------
-6. NOTA SOBRE LA RELEASE ACTUAL
-----------------------------------------------------------------------
-La release actual debe considerarse una fase de consolidación.
-
-Qué ya está listo:
-- separación por módulos
-- baseline funcional
-- EV básico
-- períodos financieros
-- control documentario de seguimiento
-- pruebas de integración del dominio
-
-Qué todavía no está implementado:
-- plantillas time-phased configurables
-- distribución temporal de HH y presupuesto de línea base
-- workflow documental completo
-- dashboards analíticos avanzados
+Qué queda listo al cerrar Sprint 23:
+- builder
+- viewer
+- jerarquía expandible
+- validaciones visibles del motor temporal
+- persistencia mínima de uso
+- pruebas específicas del módulo
 
 ----------------------------------------------------------------------
 7. ARCHIVOS DE REFERENCIA
 ----------------------------------------------------------------------
-- `README.md`: visión general, alcance y roadmap
+- `README.md`: visión general y alcance actualizado
+- `RELEASE_NOTES.md`: cierre formal del release de Plantillas
+- `NOTAS.md`: resumen técnico de la entrega Sprint 23
 - `INSTRUCCIONES.txt`: guía rápida de actualización, pruebas y troubleshooting

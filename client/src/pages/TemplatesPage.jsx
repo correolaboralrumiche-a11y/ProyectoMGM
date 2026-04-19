@@ -150,7 +150,7 @@ export default function TemplatesPage({ activeProjectId, activeProject, permissi
   const canCreate = Boolean(templatePermissions?.create);
   const canUpdate = Boolean(templatePermissions?.update);
   const canDelete = Boolean(templatePermissions?.delete);
-  const canWrite = !operationalLock && (editingTemplateId ? canUpdate : canCreate);
+  const canWrite = editingTemplateId ? canUpdate : canCreate;
 
   useEffect(() => {
     if (!catalog) return;
@@ -230,6 +230,9 @@ export default function TemplatesPage({ activeProjectId, activeProject, permissi
 
       {errors.catalog ? <InlineAlert tone="danger">{errors.catalog}</InlineAlert> : null}
       {errors.templates ? <InlineAlert tone="danger">{errors.templates}</InlineAlert> : null}
+      {operationalLock ? (
+        <InlineAlert tone="info">El proyecto está en modo solo lectura operativa, pero las plantillas siguen siendo configurables según permisos del módulo.</InlineAlert>
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
         <TemplateList

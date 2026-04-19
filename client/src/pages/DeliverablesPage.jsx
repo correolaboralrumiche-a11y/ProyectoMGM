@@ -202,6 +202,10 @@ function RevisionsTable({ revisions, selectedId, onEdit, canManage }) {
   );
 }
 
+function resolveFlag(primaryValue, fallbackValue = false) {
+  return typeof primaryValue === 'boolean' ? primaryValue : Boolean(fallbackValue);
+}
+
 export default function DeliverablesPage({
   activeProject,
   tree,
@@ -210,8 +214,13 @@ export default function DeliverablesPage({
   canUpdate = false,
   canDelete = false,
   canManageRevisions = false,
+  permissions,
 }) {
   const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const effectiveCanCreate = resolveFlag(canCreate, permissions?.deliverables?.create);
+  const effectiveCanUpdate = resolveFlag(canUpdate, permissions?.deliverables?.update);
+  const effectiveCanDelete = resolveFlag(canDelete, permissions?.deliverables?.delete);
+  const effectiveCanManageRevisions = resolveFlag(canManageRevisions, permissions?.deliverables?.manageRevisions);
   const { deliverables, loading, error, reloadDeliverables } = useDeliverables(activeProject?.id, filters);
 
   const [catalogs, setCatalogs] = useState({
@@ -435,7 +444,7 @@ export default function DeliverablesPage({
     event.preventDefault();
     clearFeedback();
 
-    if (!(editingDeliverableId ? canUpdate : canCreate)) {
+    if (!(editingDeliverableId ? effectiveCanUpdate : effectiveCanCreate)) {
       setPageError(editingDeliverableId ? 'No tienes permiso para editar entregables.' : 'No tienes permiso para crear entregables.');
       return;
     }
@@ -483,7 +492,7 @@ export default function DeliverablesPage({
 
   async function handleDeleteDeliverable(item) {
     clearFeedback();
-    if (!canDelete) {
+    if (!effectiveCanDelete) {
       setPageError('No tienes permiso para eliminar entregables.');
       return;
     }
@@ -510,7 +519,7 @@ export default function DeliverablesPage({
       return;
     }
 
-    if (!canManageRevisions) {
+    if (!effectiveCanManageRevisions) {
       setPageError('No tienes permiso para gestionar revisiones documentarias.');
       return;
     }
@@ -631,8 +640,8 @@ export default function DeliverablesPage({
               onSelect={setSelectedDeliverableId}
               onEdit={startEditDeliverable}
               onDelete={handleDeleteDeliverable}
-              canUpdate={canUpdate}
-              canDelete={canDelete}
+              canUpdate={effectiveCanUpdate}
+              canDelete={effectiveCanDelete}
             />
           </div>
 
@@ -645,7 +654,7 @@ export default function DeliverablesPage({
               revisions={revisions}
               selectedId={editingRevisionId}
               onEdit={startEditRevision}
-              canManage={canManageRevisions}
+              canManage={effectiveCanManageRevisions}
             />
           </div>
         </div>
@@ -776,7 +785,7 @@ export default function DeliverablesPage({
             </div>
 
             <div className="mt-4 flex justify-end">
-              <button type="submit" className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700" disabled={savingDeliverable}>
+              <button type="submit" className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700" disabled={savingDeliverable || !(editingDeliverableId ? effectiveCanUpdate : effectiveCanCreate)}>
                 {savingDeliverable ? 'Guardando...' : editingDeliverableId ? 'Actualizar entregable' : 'Crear entregable'}
               </button>
             </div>
@@ -852,7 +861,7 @@ export default function DeliverablesPage({
             </div>
 
             <div className="mt-4 flex justify-end">
-              <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800" disabled={savingRevision || !selectedDeliverable}>
+              <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800" disabled={savingRevision || !selectedDeliverable || !effectiveCanManageRevisions}>
                 {savingRevision ? 'Guardando...' : editingRevisionId ? 'Actualizar revisión' : 'Registrar revisión'}
               </button>
             </div>

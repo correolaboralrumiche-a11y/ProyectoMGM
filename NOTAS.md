@@ -1,19 +1,19 @@
-Sprint 18 — Fase 5: UI de Plantillas (builder + visor)
+Sprint 23 — Hardening UX, permisos finos y cierre de release de Plantillas
 
 Archivos para reemplazar:
 - client/src/App.jsx
-- client/src/components/layout/Tabs.jsx
-
-Archivos nuevos para agregar:
-- client/src/services/layoutTemplatesApi.js
 - client/src/hooks/useLayoutTemplates.js
 - client/src/pages/TemplatesPage.jsx
-- client/src/components/templates/TemplateBuilder.jsx
-- client/src/components/templates/TemplateColumnsSelector.jsx
 - client/src/components/templates/TemplateViewer.jsx
 - client/src/components/templates/TimeGrid.jsx
+- README.md
+- RELEASE_NOTES.md
+- NOTAS.md
+- INSTRUCCIONES.txt
 
 Notas:
-- Esta fase asume que ya están aplicadas las Fases 1 a 4 del Sprint 18 en backend.
 - No requiere migraciones nuevas.
-- La pestaña Plantillas se muestra dentro del Módulo 1 — Control de Proyectos.
+- No agrega rutas nuevas ni cambia nombres existentes.
+- Mantiene funcionalidad de Sprint 19–22 y solo endurece UX, persistencia y documentación.
+- La pestaña Plantillas queda visible solo para usuarios con `layout_templates.read`.
+- La distribución temporal sigue en consulta cuando el proyecto no está Activo, pero el resto del ERP no entra en modo lectura global.
